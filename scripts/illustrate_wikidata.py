@@ -8,7 +8,7 @@ For this to be available the PageImages extension
 
 Usage:
 
-python illustrate_wikidata.py <some generator>
+    python pwb.py illustrate_wikidata <some generator>
 
 &params;
 """
@@ -18,6 +18,8 @@ python illustrate_wikidata.py <some generator>
 #
 # Distributed under the terms of MIT License.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
@@ -63,7 +65,8 @@ class IllustrateRobot(WikidataBot):
 
         claims = item.get().get('claims')
         if self.wdproperty in claims:
-            pywikibot.output(u'Item %s already contains image (%s)' % (item.title(), self.wdproperty))
+            pywikibot.output('Item %s already contains image (%s)'
+                             % (item.title(), self.wdproperty))
             return
 
         newclaim = pywikibot.Claim(self.repo, self.wdproperty)
@@ -114,11 +117,12 @@ def main(*args):
 
     generator = generator_factory.getCombinedGenerator()
     if not generator:
-        pywikibot.output('I need a generator with pages to work on')
-        return
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
     bot = IllustrateRobot(generator, wdproperty)
     bot.run()
+    return True
 
 if __name__ == "__main__":
     main()

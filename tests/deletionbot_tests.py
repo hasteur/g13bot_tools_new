@@ -5,6 +5,8 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import pywikibot
@@ -12,10 +14,10 @@ import pywikibot.page
 
 from scripts import delete
 
-from tests.aspects import unittest, TestCase
+from tests.aspects import unittest, ScriptMainTestCase
 
 
-class TestDeletionBotWrite(TestCase):
+class TestDeletionBotWrite(ScriptMainTestCase):
 
     """Test deletionbot script."""
 
@@ -48,7 +50,7 @@ class TestDeletionBotWrite(TestCase):
                     '-undelete', '-summary=pywikibot unit tests')
 
 
-class TestDeletionBotUser(TestCase):
+class TestDeletionBotUser(ScriptMainTestCase):
 
     """Test deletionbot as a user (not sysop)."""
 
@@ -59,6 +61,7 @@ class TestDeletionBotUser(TestCase):
     write = True
 
     def test_delete_mark(self):
+        """Test marking User:Unicodesnowman/DeleteMark for deletion."""
         site = self.get_site()
         if site.username(sysop=True):
             raise unittest.SkipTest('can\'t test mark with sysop account')
@@ -75,7 +78,7 @@ class TestDeletionBotUser(TestCase):
         p1.save('unit test', botflag=True)
 
 
-class TestDeletionBot(TestCase):
+class TestDeletionBot(ScriptMainTestCase):
 
     """Test deletionbot with patching to make it non-write."""
 
@@ -88,6 +91,7 @@ class TestDeletionBot(TestCase):
     undelete_args = []
 
     def setUp(self):
+        """Set up unit test."""
         self._original_delete = pywikibot.Page.delete
         self._original_undelete = pywikibot.Page.undelete
         pywikibot.Page.delete = delete_dummy
@@ -95,22 +99,28 @@ class TestDeletionBot(TestCase):
         super(TestDeletionBot, self).setUp()
 
     def tearDown(self):
+        """Tear down unit test."""
         pywikibot.Page.delete = self._original_delete
         pywikibot.Page.undelete = self._original_undelete
         super(TestDeletionBot, self).tearDown()
 
     def test_dry(self):
+        """Test dry run of bot."""
         delete.main('-page:Main Page', '-always', '-summary:foo')
-        self.assertEqual(self.delete_args, ['[[Main Page]]', 'foo', False, True])
+        self.assertEqual(self.delete_args, ['[[Main Page]]', 'foo', False,
+                                            True, True])
         delete.main('-page:FoooOoOooO', '-always', '-summary:foo', '-undelete')
         self.assertEqual(self.undelete_args, ['[[FoooOoOooO]]', 'foo'])
 
 
-def delete_dummy(self, reason, prompt, mark):
-    TestDeletionBot.delete_args = [self.title(asLink=True), reason, prompt, mark]
+def delete_dummy(self, reason, prompt, mark, quit):
+    """Dummy delete method."""
+    TestDeletionBot.delete_args = [self.title(asLink=True), reason, prompt,
+                                   mark, quit]
 
 
 def undelete_dummy(self, reason):
+    """Dummy undelete method."""
     TestDeletionBot.undelete_args = [self.title(asLink=True), reason]
 
 

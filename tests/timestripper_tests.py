@@ -5,33 +5,53 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import datetime
 
 from pywikibot.textlib import TimeStripper, tzoneFixedOffset
-from tests.aspects import unittest, TestCase
+
+from tests.aspects import (
+    unittest,
+    TestCase,
+    DefaultSiteTestCase,
+    DeprecationTestCase,
+)
 
 
-class TestTimeStripperWithNoDigitsAsMonths(TestCase):
+class TestTimeStripperCase(TestCase):
 
-    """Test cases for TimeStripper methods."""
-
-    family = 'wikipedia'
-    code = 'fr'
+    """Basic class to test the TimeStripper class."""
 
     cached = True
 
     def setUp(self):
         """Set up test cases."""
-        super(TestTimeStripperWithNoDigitsAsMonths, self).setUp()
+        super(TestTimeStripperCase, self).setUp()
         self.ts = TimeStripper(self.get_site())
+
+
+class DeprecatedTestTimeStripperCase(TestTimeStripperCase, DeprecationTestCase,
+                                     DefaultSiteTestCase):
+
+    """Test deprecated parts of the TimeStripper class."""
 
     def test_findmarker(self):
         """Test that string which is not part of text is found."""
         txt = u'this is a string with a maker is @@@@already present'
         self.assertEqual(self.ts.findmarker(txt, base=u'@@', delta='@@'),
                          '@@@@@@')
+        self.assertOneDeprecation()
+
+
+class TestTimeStripperWithNoDigitsAsMonths(TestTimeStripperCase):
+
+    """Test cases for TimeStripper methods."""
+
+    family = 'wikipedia'
+    code = 'fr'
 
     def test_last_match_and_replace(self):
         """Test that pattern matches and removes items correctly."""
@@ -85,18 +105,12 @@ class TestTimeStripperWithNoDigitsAsMonths(TestCase):
         self.assertEqual(self.ts.timestripper(txtHourOutOfRange), None)
 
 
-class TestTimeStripperWithDigitsAsMonths(TestCase):
+class TestTimeStripperWithDigitsAsMonths(TestTimeStripperCase):
 
     """Test cases for TimeStripper methods."""
 
     family = 'wikipedia'
     code = 'cs'
-
-    cached = True
-
-    def setUp(self):
-        super(TestTimeStripperWithDigitsAsMonths, self).setUp()
-        self.ts = TimeStripper(self.get_site())
 
     def test_last_match_and_replace(self):
         """Test that pattern matches and removes items correctly."""
@@ -132,48 +146,52 @@ class TestTimeStripperLanguage(TestCase):
         'cswiki': {
             'family': 'wikipedia',
             'code': 'cs',
-            'match': u'3. 2. 2010, 19:48 (UTC) 7. 2. 2010 19:48 (UTC)',
+            'match': u'3. 2. 2011, 19:48 (UTC) 7. 2. 2010 19:48 (UTC)',
         },
         'enwiki': {
             'family': 'wikipedia',
             'code': 'en',
-            'match': u'3 February 2010 19:48 (UTC) 7 February 2010 19:48 (UTC)',
-            'nomatch': u'3. 2. 2010, 19:48 (UTC) 7. 2. 2010 19:48 (UTC)',
+            'match': u'3 February 2011 19:48 (UTC) 7 February 2010 19:48 (UTC)',
+            'nomatch': u'3. 2. 2011, 19:48 (UTC) 7. 2. 2010 19:48 (UTC)',
         },
         'fawiki': {
             'family': 'wikipedia',
             'code': 'fa',
-            'match': u'۳ فوریهٔ  ۲۰۱۰، ساعت ۱۹:۴۸ (UTC) ۷ فوریهٔ  ۲۰۱۰، ساعت ۱۹:۴۸ (UTC)',
+            'match': u'۳ فوریهٔ  ۲۰۱۱، ساعت ۱۹:۴۸ (UTC) ۷ فوریهٔ  ۲۰۱۰، ساعت ۱۹:۴۸ (UTC)',
             'nomatch': u'۳ ۲ ۲۰۱۴ ۱۹:۴۸ (UTC) ۷ ۲ ۲۰۱۰ ۱۹:۴۸ (UTC)',
         },
         'frwiki': {
             'family': 'wikipedia',
             'code': 'fr',
-            'match': u'3 février 2010 à 19:48 (CET) 7 février 2010 à 19:48 (CET)',
-            'nomatch': u'3 March 2010 19:48 (CET) 7 March 2010 19:48 (CET)',
+            'match': u'3 février 2011 à 19:48 (CET) 7 février 2010 à 19:48 (CET)',
+            'nomatch': u'3 March 2011 19:48 (CET) 7 March 2010 19:48 (CET)',
         },
         'kowiki': {
             'family': 'wikipedia',
             'code': 'ko',
-            'match': u'2010년 2월 3일 (수) 19:48 (KST) 2010년 2월 7일 (수) 19:48 (KST)',
+            'match': u'2011년 2월 3일 (수) 19:48 (KST) 2010년 2월 7일 (수) 19:48 (KST)',
         },
         'nowiki': {
             'family': 'wikipedia',
             'code': 'no',
-            'match': u'3. feb 2010 kl. 19:48 (CET) 7. feb 2010 kl. 19:48 (UTC)',
+            'match': u'3. feb 2011 kl. 19:48 (CET) 7. feb 2010 kl. 19:48 (UTC)',
         },
         'ptwiki': {
             'family': 'wikipedia',
             'code': 'pt',
-            'match': u'19h48min de 3 de fevereiro de 2010‎ (UTC) 19h48min de 7 de fevereiro de 2010‎ (UTC)',
+            'match': '19h48min de 3 de fevereiro de 2011‎ (UTC) 19h48min '
+                     'de 7 de fevereiro de 2010‎ (UTC)',
         },
         'viwiki': {
             'family': 'wikipedia',
             'code': 'vi',
-            'match': u'19:48, ngày 15 tháng 9 năm 2008 (UTC) 19:48, ngày 7 tháng 2 năm 2010 (UTC)',
-            'match2': u'16:41, ngày 15 tháng 9 năm 2008 (UTC) 16:41, ngày 12 tháng 9 năm 2008 (UTC)',
-            'match3':  u'21:18, ngày 13 tháng 8 năm 2014 (UTC) 21:18, ngày 14 tháng 8 năm 2014 (UTC)',
-            'nomatch1': u'21:18, ngày 13 March 8 năm 2014 (UTC) 21:18, ngày 14 March 8 năm 2014 (UTC)',
+            'match': '19:48, ngày 3 tháng 2 năm 2011 (UTC) 19:48, ngày 7 tháng 2 năm 2010 (UTC)',
+            'match2': '16:41, ngày 15 tháng 9 năm 2001 (UTC) 16:41, '
+                      'ngày 12 tháng 9 năm 2008 (UTC)',
+            'match3': '21:18, ngày 13 tháng 8 năm 2011 (UTC) 21:18, '
+                      'ngày 14 tháng 8 năm 2014 (UTC)',
+            'nomatch1': '21:18, ngày 13 March 8 năm 2011 (UTC) 21:18, '
+                        'ngày 14 March 8 năm 2014 (UTC)',
         },
     }
 
@@ -217,7 +235,7 @@ class TestTimeStripperLanguage(TestCase):
         if 'nomatch' in self.sites[key]:
             txtNoMatch = self.sites[key]['nomatch']
         else:
-            txtNoMatch = u'3 March 2010 19:48 (UTC) 7 March 2010 19:48 (UTC)'
+            txtNoMatch = u'3 March 2011 19:48 (UTC) 7 March 2010 19:48 (UTC)'
 
         self.assertEqual(self.ts.timestripper(txtNoMatch), None)
 
@@ -226,6 +244,53 @@ class TestTimeStripperLanguage(TestCase):
 
         txtNoMatch = self.sites[key]['nomatch1']
         self.assertEqual(self.ts.timestripper(txtNoMatch), None)
+
+
+class TestTimeStripperDoNotArchiveUntil(TestTimeStripperCase):
+
+    """Test cases for Do Not Archive Until templates.
+
+    See https://commons.wikimedia.org/wiki/Template:DNAU and
+    https://en.wikipedia.org/wiki/Template:Do_not_archive_until.
+    """
+
+    family = 'wikisource'
+    code = 'en'
+
+    username = '[[User:DoNotArchiveUntil]]'
+    date = '06:57 06 June 2015 (UTC)'
+    user_and_date = username + ' ' + date
+    tzone = tzoneFixedOffset(0, 'UTC')
+
+    def test_timestripper_match(self):
+        """Test that dates in comments  are correctly recognised."""
+        ts = self.ts
+
+        txt_match = '<!-- [[User:Do___ArchiveUntil]] ' + self.date + ' -->'
+        res = datetime.datetime(2015, 6, 6, 6, 57, tzinfo=self.tzone)
+        self.assertEqual(ts.timestripper(txt_match), res)
+
+        txt_match = '<!-- --> <!-- ' + self.user_and_date + ' <!-- -->'
+        res = datetime.datetime(2015, 6, 6, 6, 57, tzinfo=self.tzone)
+        self.assertEqual(ts.timestripper(txt_match), res)
+
+        txt_match = '<!-- ' + self.user_and_date + ' -->'
+        res = datetime.datetime(2015, 6, 6, 6, 57, tzinfo=self.tzone)
+        self.assertEqual(ts.timestripper(txt_match), res)
+
+    def test_timestripper_match_only(self):
+        """Test that latest date is used instead of other dates."""
+        ts = self.ts
+
+        later_date = '10:57 06 June 2015 (UTC)'
+        txt_match = '<!-- --> ' + self.user_and_date + ' <!-- -->' + later_date
+        res = datetime.datetime(2015, 6, 6, 10, 57, tzinfo=self.tzone)
+        self.assertEqual(ts.timestripper(txt_match), res)
+
+        earlier_date = '02:57 06 June 2015 (UTC)'
+        txt_match = '<!-- ' + self.user_and_date + ' --> ' + earlier_date
+        res = datetime.datetime(2015, 6, 6, 6, 57, tzinfo=self.tzone)
+        self.assertEqual(ts.timestripper(txt_match), res)
 
 
 if __name__ == '__main__':

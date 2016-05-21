@@ -5,6 +5,10 @@ This bot resets a (user) sandbox with predefined text.
 
 This script understands the following command-line arguments:
 
+&params;
+
+Furthermore, the following command line parameters are supported:
+
     -hours:#       Use this parameter if to make the script repeat itself
                    after # hours. Hours can be defined as a decimal. 0.01
                    hours are 36 seconds; 0.1 are 6 minutes.
@@ -13,20 +17,6 @@ This script understands the following command-line arguments:
                    was made. If no parameter is given it takes it from
                    hours and limits it between 5 and 15 minutes.
                    The minimum delay time is 5 minutes.
-
-    -user          Use this parameter to run the script in the user name-
-                   space.
-                   > ATTENTION: on most wiki THIS IS FORBIDEN FOR BOTS ! <
-                   > (please talk with your admin first)                 <
-                   Since it is considered bad style to edit user page with-
-                   out permission, the 'user_sandboxTemplate' for given
-                   language has to be set-up (no fall-back will be used).
-                   All pages containing that template will get cleaned.
-                   Please be also aware that the rules when to clean the
-                   user sandbox differ from those for project sandbox.
-
-    -page          Run the bot on specific page, you can use this when
-                   you haven't configured clean_candbox for your wiki.
 
     -text          The text that substitutes in the sandbox, you can use this
                    when you haven't configured clean_candbox for your wiki.
@@ -45,28 +35,38 @@ This script understands the following command-line arguments:
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import division
+from __future__ import absolute_import, division, unicode_literals
 __version__ = '$Id$'
 #
 
-import time
 import datetime
-import sys
+import time
+
 import pywikibot
-from pywikibot import i18n, Bot
+
+from pywikibot import i18n, Bot, pagegenerators
 
 content = {
     'commons': u'{{Sandbox}}\n<!-- Please edit only below this line. -->',
     'als': u'{{subst:/Vorlage}}',
-    'ar': u'{{عنوان الملعب}}\n<!-- مرحبا! خذ راحتك في تجربة مهارتك في التنسيق والتحرير أسفل هذا السطر. هذه الصفحة لتجارب التعديل ، سيتم تفريغ هذه الصفحة كل 12 ساعة. -->',
-    'arz': '{{عنوان السبوره}}\n<!-- مرحبا! خد راحتك فى تجريب مهاراتك فى\nالتحرير تحت الخط ده. بما إن الصفحه دى لتجارب التعديل، فالصفحه دى حيتم تنضيفها\nاوتوماتيكيا كل 12 ساعه. -->',
-    'az': u'<!--- LÜTFƏN, BU SƏTRƏ TOXUNMAYIN --->\n{{Qaralama dəftəri}}\n<!-- AŞAĞIDAKI XƏTTİN ALTINDAN YAZA BİLƏRSİNİZ --->',
+    'ar': u'{{عنوان الملعب}}\n<!-- مرحبا! خذ راحتك في تجربة مهارتك في التنسيق '
+          u'والتحرير أسفل هذا السطر. هذه الصفحة لتجارب التعديل ، سيتم تفريغ '
+          u'هذه الصفحة كل 12 ساعة. -->',
+    'arz': u'{{عنوان السبوره}}\n<!-- مرحبا! خد راحتك فى تجريب مهاراتك فى\n'
+           u'التحرير تحت الخط ده. بما إن الصفحه دى لتجارب التعديل، فالصفحه دى '
+           u'حيتم تنضيفها\nاوتوماتيكيا كل 12 ساعه. -->',
+    'az': u'<!--- LÜTFƏN, BU SƏTRƏ TOXUNMAYIN --->\n{{Qaralama dəftəri}}\n'
+          u'<!-- AŞAĞIDAKI XƏTTİN ALTINDAN YAZA BİLƏRSİNİZ --->',
     'bar': u'{{Bitte erst NACH dieser Zeile schreiben! (Begrüßungskasten)}}\r\n',
     'cs': u'{{subst:/uhrabat}}',
     'da': u'{{subst:Sandkasse tekst}}',
     'de': u'{{subst:Wikipedia:Spielwiese/Vorlage}}',
-    'en': u'{{Sandbox heading}}\n<!-- Hello! Feel free to try your formatting and editing skills below this line. As this page is for editing experiments, this page will automatically be cleaned every 12 hours. -->',
-    'fa': u'{{subst:User:Amirobot/sandbox}}',
+    'en': u'{{Sandbox heading}}\n<!-- Hello! Feel free to try your formatting '
+          u'and editing skills below this line. As this page is for editing '
+          u'experiments, this page will automatically be cleaned every 12 '
+          u'hours. -->',
+    'eo': '{{Bonvolu ne forigi tiun ĉi linion (Provejo)}}',
+    'fa': u'{{subst:Wikipedia:ربات/sandbox}}',
     'fi': u'{{subst:Hiekka}}',
     'he': u'{{ארגז חול}}\n<!-- נא לערוך מתחת לשורה זו בלבד, תודה. -->',
     'id': u'{{Bakpasir}}\n<!-- Uji coba dilakukan di baris di bawah ini -->',
@@ -74,19 +74,27 @@ content = {
     'ja': u'{{subst:サンドボックス}}',
     'ko': u'{{연습장 안내문}}',
     'ksh': u'{{subst:/Schablon}}',
-    'mzn': u'{{ویکی‌پدیا:چنگ‌مویی صفحه/پیغوم}}\n<!-- سلام!اگه خواننی شه دچی‌ین مهارتون وسه تمرین هاکنین بتوننی اینتا صفحه جا ایستفاده هاکنین، اته لطف هاکنین اینتا پیغوم ره شه بقیه رفقون وسه بیلین. اینتا صفحه هرچند ساعت ربوت جا پاک بونه.-->',
+    'mzn': u'{{ویکی‌پدیا:چنگ‌مویی صفحه/پیغوم}}\n<!-- سلام!اگه '
+           u'خواننی شه دچی‌ین مهارتون وسه تمرین هاکنین بتوننی اینتا صفحه جا '
+           u'ایستفاده هاکنین، اته لطف هاکنین اینتا پیغوم ره شه بقیه رفقون وسه '
+           u'بیلین. اینتا صفحه هرچند ساعت ربوت جا پاک بونه.-->',
     'nds': u'{{subst:/Vörlaag}}',
     'nl': u'{{subst:Wikipedia:Zandbak/schoon zand}}',
-    'nn': u'{{sandkasse}}\n<!-- Ver snill og IKKJE FJERN DENNE LINA OG LINA OVER ({{sandkasse}}) Nedanføre kan du derimot ha det artig og prøve deg fram! Lykke til! :-)  -->',
-    'no': u'{{Sandkasse}}\n<!-- VENNLIGST EKSPERIMENTER NEDENFOR DENNE SKJULTE TEKSTLINJEN! SANDKASSEMALEN {{Sandkasse}} SKAL IKKE FJERNES! -->}}',
+    'nn': u'{{sandkasse}}\n<!-- Ver snill og IKKJE FJERN DENNE LINA OG LINA '
+          u'OVER ({{sandkasse}}) Nedanføre kan du derimot ha det artig og '
+          u'prøve deg fram! Lykke til! :-)  -->',
+    'no': u'{{Sandkasse}}\n<!-- VENNLIGST EKSPERIMENTER NEDENFOR DENNE '
+          u'SKJULTE TEKSTLINJEN! SANDKASSEMALEN {{Sandkasse}} SKAL IKKE '
+          u'FJERNES! -->}}',
     'pl': u'{{Prosimy - NIE ZMIENIAJ, NIE KASUJ, NIE PRZENOŚ tej linijki - pisz niżej}}',
     'pt': u'<!--não apague esta linha-->{{página de testes}}<!--não apagar-->\r\n',
     'ru': u'{{/Пишите ниже}}\n<!-- Не удаляйте, пожалуйста, эту строку, тестируйте ниже -->',
     'simple': u'{{subst:/Text}}',
-    'sco': u'Feel free tae test here',
+    'sco': u'{{subst:Saundbox}}',
     'sr': u'{{песак}}\n<!-- Молимо, испробавајте испод ове линије. Хвала. -->',
     'sv': u'{{subst:Sandlådan}}',
-    'th': u'{{กระบะทราย}}\n<!-- กรุณาอย่าแก้ไขบรรทัดนี้ ขอบคุณครับ/ค่ะ -- Please leave this line as they are. Thank you! -->',
+    'th': u'{{กระบะทราย}}\n<!-- กรุณาอย่าแก้ไขบรรทัดนี้ ขอบคุณครับ/ค่ะ -- '
+          u'Please leave this line as they are. Thank you! -->',
     'tr': u'{{/Bu satırı değiştirmeden bırakın}}',
     'zh': u'{{subst:User:Sz-iwbot/sandbox}}\r\n',
 }
@@ -102,6 +110,7 @@ sandboxTitle = {
     'da': u'Project:Sandkassen',
     'de': u'Project:Spielwiese',
     'en': u'Project:Sandbox',
+    'eo': 'Project:Provejo',
     'fa': [u'Project:صفحه تمرین', u'Project:آشنایی با ویرایش'],
     'fi': u'Project:Hiekkalaatikko',
     'fr': u'Project:Bac à sable',
@@ -119,7 +128,7 @@ sandboxTitle = {
     'pt': u'Project:Página de testes',
     'ru': u'Project:Песочница',
     'simple': u'Project:Sandbox',
-    'sco': u'Project:Saundpit',
+    'sco': u'Project:Saundbox',
     'sr': u'Project:Песак',
     'sv': u'Project:Sandlådan',
     'th': u'Project:ทดลองเขียน',
@@ -127,12 +136,10 @@ sandboxTitle = {
     'zh': u'Project:沙盒',
 }
 
-user_content = {
-    'de': u'{{Benutzer:DrTrigonBot/Spielwiese}}',
-}
-
-user_sandboxTemplate = {
-    'de': u'User:DrTrigonBot/Spielwiese',
+# This is required for the text that is shown when you run this script
+# with the parameter -help.
+docuReplacements = {
+    '&params;':     pagegenerators.parameterHelp,
 }
 
 
@@ -145,9 +152,7 @@ class SandboxBot(Bot):
         'no_repeat': True,
         'delay': None,
         'delay_td': None,
-        'user': False,
         'text': "",
-        'page': None,
         'summary': "",
     }
 
@@ -162,23 +167,18 @@ class SandboxBot(Bot):
             self.availableOptions['delay_td'] = datetime.timedelta(minutes=d)
 
         self.site = pywikibot.Site()
-        if self.getOption('user'):
-            localSandboxTitle = i18n.translate(self.site,
-                                               user_sandboxTemplate)
-            localSandbox = pywikibot.Page(self.site, localSandboxTitle)
-            content.update(user_content)
-            sandboxTitle[self.site.code] = [item.title() for item in
-                                            localSandbox.getReferences(
-                                                onlyTemplateInclusion=True)]
-            if self.site.code not in user_sandboxTemplate:
-                content[self.site.code] = None
-                pywikibot.output(
-                    u'Not properly set-up to run in user namespace!')
-        if (not sandboxTitle.get(self.site.code) and not self.getOption('page')) or (not content.get(
-                self.site.code) and not self.getOption('text')):
-            pywikibot.output(u'This bot is not configured for the given site '
-                             u'(%s), exiting.' % self.site)
-            sys.exit(0)
+        if not content.get(self.site.code) and not self.getOption('text'):
+            pywikibot.error(u'No content is given for pages, exiting.')
+            raise RuntimeError
+        if not self.generator:
+            if self.site.code not in sandboxTitle:
+                pywikibot.bot.suggest_help(missing_generator=True)
+                raise RuntimeError
+            local_sandbox_title = sandboxTitle[self.site.code]
+            if not isinstance(local_sandbox_title, list):
+                local_sandbox_title = [local_sandbox_title]
+            self.generator = [pywikibot.Page(self.site, page_name) for
+                              page_name in local_sandbox_title]
 
     def run(self):
         """Run bot."""
@@ -186,16 +186,7 @@ class SandboxBot(Bot):
         while True:
             wait = False
             now = time.strftime("%d %b %Y %H:%M:%S (UTC)", time.gmtime())
-            if self.getOption('page'):
-                localSandboxTitle = self.getOption('page')
-            else:
-                localSandboxTitle = i18n.translate(self.site, sandboxTitle)
-            if isinstance(localSandboxTitle, list):
-                titles = localSandboxTitle
-            else:
-                titles = [localSandboxTitle]
-            for title in titles:
-                sandboxPage = pywikibot.Page(self.site, title)
+            for sandboxPage in self.generator:
                 pywikibot.output(u'Preparing to process sandbox page %s'
                                  % sandboxPage.title(asLink=True))
                 if sandboxPage.isRedirectPage():
@@ -218,27 +209,14 @@ class SandboxBot(Bot):
                     if text.strip() == translatedContent.strip():
                         pywikibot.output(
                             u'The sandbox is still clean, no change necessary.')
-                    elif subst and \
-                         sandboxPage.userName() == self.site.user():
+                    elif subst and sandboxPage.userName() == self.site.user():
                         pywikibot.output(
                             u'The sandbox might be clean, no change necessary.')
                     elif pos != 0 and not subst:
-                        if self.getOption('user'):
-                            endpos = pos + len(translatedContent.strip())
-                            if (pos < 0) or (endpos == len(text)):
-                                pywikibot.output(u'The user sandbox is still '
-                                                 u'clean, no change necessary.')
-                            else:
-                                sandboxPage.put(text[:endpos], translatedMsg)
-                                pywikibot.showDiff(text, text[:endpos])
-                                pywikibot.output(
-                                    u'Standard content was changed, user '
-                                    u'sandbox cleaned.')
-                        else:
-                            sandboxPage.put(translatedContent, translatedMsg)
-                            pywikibot.showDiff(text, translatedContent)
-                            pywikibot.output(u'Standard content was changed, '
-                                             u'sandbox cleaned.')
+                        sandboxPage.put(translatedContent, translatedMsg)
+                        pywikibot.showDiff(text, translatedContent)
+                        pywikibot.output(u'Standard content was changed, '
+                                         u'sandbox cleaned.')
                     else:
                         edit_delta = (datetime.datetime.utcnow() -
                                       sandboxPage.editTime())
@@ -287,37 +265,33 @@ def main(*args):
     @type args: list of unicode
     """
     opts = {}
-    for arg in pywikibot.handle_args(args):
+    local_args = pywikibot.handle_args(args)
+    gen_factory = pagegenerators.GeneratorFactory()
+    for arg in local_args:
         if arg.startswith('-hours:'):
             opts['hours'] = float(arg[7:])
             opts['no_repeat'] = False
         elif arg.startswith('-delay:'):
             opts['delay'] = int(arg[7:])
-        elif arg.startswith('-page'):
-            if len(arg) == 5:
-                opts['page'] = pywikibot.input(
-                    u'Which page do you want to change?')
-            else:
-                opts['page'] = arg[6:]
         elif arg.startswith('-text'):
             if len(arg) == 5:
                 opts['text'] = pywikibot.input(
                     u'What text do you want to substitute?')
             else:
                 opts['text'] = arg[6:]
-        elif arg == '-user':
-            opts['user'] = True
         elif arg.startswith('-summary'):
             if len(arg) == len('-summary'):
                 opts['summary'] = pywikibot.input(u'Enter the summary:')
             else:
                 opts['summary'] = arg[9:]
         else:
-            pywikibot.showHelp('clean_sandbox')
-            return
+            gen_factory.handleArg(arg)
 
-    bot = SandboxBot(**opts)
+    generator = gen_factory.getCombinedGenerator()
+
+    bot = SandboxBot(generator=generator, **opts)
     bot.run()
+
 
 if __name__ == "__main__":
     main()

@@ -53,7 +53,10 @@ Furthermore, the following command line parameters are supported:
 
 -summary:XYZ      Set the summary message text for the edit to XYZ, bypassing
                   the predefined message texts with original and replacements
-                  inserted.
+                  inserted. Can't be used with -automaticsummary.
+
+-automaticsummary Uses an automatic summary for all replacements which don't
+                  have a summary defined. Can't be used with -summary.
 
 -sleep:123        If you use -fix you can check multiple regex at the same time
                   in every page. This can lead to a great waste of CPU because
@@ -65,12 +68,17 @@ Furthermore, the following command line parameters are supported:
                   given in the dictionary 'fixes' defined inside the files
                   fixes.py and user-fixes.py.
 
+&fixes-help;
+
 -manualinput      Request manual replacements via the command line input even
                   if replacements are already defined. If this option is set
                   (or no replacements are defined via -fix or the arguments)
                   it'll ask for additional replacements at start.
 
-&fixes-help;
+-pairsfile        Lines from the given file name(s) will be read as replacement
+                  arguments. i.e. a file containing lines "a" and "b", used as
+                  python pwb.py replace -page:X -pairsfile:file c d
+                  will replace 'a' with 'b' and 'c' with 'd'.
 
 -always           Don't prompt you for each replacement
 
@@ -95,47 +103,66 @@ If you want to change templates from the old syntax, e.g. {{msg:Stub}}, to the
 new syntax, e.g. {{Stub}}, download an XML dump file (pages-articles) from
 https://download.wikimedia.org, then use this command:
 
-    python replace.py -xml -regex "{{msg:(.*?)}}" "{{\1}}"
+    python pwb.py replace -xml -regex "{{msg:(.*?)}}" "{{\1}}"
 
 If you have a dump called foobar.xml and want to fix typos in articles, e.g.
 Errror -> Error, use this:
 
-    python replace.py -xml:foobar.xml "Errror" "Error" -namespace:0
+    python pwb.py replace -xml:foobar.xml "Errror" "Error" -namespace:0
 
 If you want to do more than one replacement at a time, use this:
-    python replace.py -xml:foobar.xml "Errror" "Error" "Faail" "Fail" -namespace:0
+
+    python pwb.py replace -xml:foobar.xml "Errror" "Error" "Faail" "Fail" \
+        -namespace:0
 
 If you have a page called 'John Doe' and want to fix the format of ISBNs, use:
 
-    python replace.py -page:John_Doe -fix:isbn
+    python pwb.py replace -page:John_Doe -fix:isbn
 
 This command will change 'referer' to 'referrer', but not in pages which
 talk about HTTP, where the typo has become part of the standard:
 
-    python replace.py referer referrer -file:typos.txt -excepttext:HTTP
+    python pwb.py replace referer referrer -file:typos.txt -excepttext:HTTP
 
 Please type "replace.py -help | more" if you can't read the top of the help.
 """
 #
 # (C) Daniel Herding, 2004-2012
-# (C) Pywikibot team, 2004-2014
+# (C) Pywikibot team, 2004-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
+import codecs
+import collections
 import re
-import time
-import webbrowser
 import sys
+import time
+import warnings
+
+if sys.version_info[0] > 2:
+    from queue import Queue
+    long = int
+else:
+    from Queue import Queue
 
 import pywikibot
+
+from pywikibot.exceptions import ArgumentDeprecationWarning
+from pywikibot.tools import issue_deprecation_warning
 from pywikibot import i18n, textlib, pagegenerators, Bot
+
 from pywikibot import editor as editarticle
 
 # Imports predefined replacements tasks from fixes.py
 from pywikibot import fixes
+
+from pywikibot.tools import chars, deprecated_args
+from pywikibot.tools.formatter import color_format
 
 if sys.version_info[0] > 2:
     basestring = (str, )
@@ -149,6 +176,7 @@ docuReplacements = {
 
 
 def precompile_exceptions(exceptions, use_regex, flags):
+    """Compile the exceptions with the given flags."""
     if not exceptions:
         return
     for exceptionCategory in [
@@ -166,6 +194,7 @@ class ReplacementBase(object):
     """The replacement instructions."""
 
     def __init__(self, old, new, edit_summary=None, default_summary=True):
+        """Create a basic replacement instance."""
         self.old = old
         self.old_regex = None
         self.new = new
@@ -174,9 +203,36 @@ class ReplacementBase(object):
 
     @property
     def edit_summary(self):
+        """Return the edit summary for this fix."""
         return self._edit_summary
 
+    @property
+    def description(self):
+        """Description of the changes that this replacement applies.
+
+        This description is used as the default summary of the replacement. If
+        you do not specify an edit summary on the command line or in some other
+        way, whenever you apply this replacement to a page and submit the
+        changes to the MediaWiki server, the edit summary includes the
+        descriptions of each replacement that you applied to the page.
+        """
+        return '-{0} +{1}'.format(self.old, self.new)
+
+    @property
+    def container(self):
+        """Container object which contains this replacement.
+
+        A container object is an object that groups one or more replacements
+        together and provides some properties that are common to all of them.
+        For example, containers may define a common name for a group of
+        replacements, or a common edit summary.
+
+        Container objects must have a "name" attribute.
+        """
+        return None
+
     def _compile(self, use_regex, flags):
+        """Compile the search text without modifying the flags."""
         # This does not update use_regex and flags depending on this instance
         if not use_regex:
             self.old_regex = re.escape(self.old)
@@ -185,6 +241,7 @@ class ReplacementBase(object):
         self.old_regex = re.compile(self.old_regex, flags)
 
     def compile(self, use_regex, flags):
+        """Compile the search text."""
         # Set the regular expression flags
         flags |= re.UNICODE
 
@@ -205,21 +262,34 @@ class Replacement(ReplacementBase):
     def __init__(self, old, new, use_regex=None, exceptions=None,
                  case_insensitive=None, edit_summary=None,
                  default_summary=True):
+        """Create a single replacement entry unrelated to a fix."""
         super(Replacement, self).__init__(old, new, edit_summary,
                                           default_summary)
         self._use_regex = use_regex
         self.exceptions = exceptions
         self._case_insensitive = case_insensitive
 
+    @classmethod
+    def from_compiled(cls, old_regex, new, **kwargs):
+        """Create instance from already compiled regex."""
+        if kwargs.get('use_regex', True) is not True:
+            raise ValueError('The use_regex parameter can only be True.')
+        repl = cls(old_regex.pattern, new, **kwargs)
+        repl.old_regex = old_regex
+        return repl
+
     @property
     def case_insensitive(self):
+        """Return whether the search text is case insensitive."""
         return self._case_insensitive
 
     @property
     def use_regex(self):
+        """Return whether the search text is using regex."""
         return self._use_regex
 
     def _compile(self, use_regex, flags):
+        """Compile the search regex and exceptions."""
         super(Replacement, self)._compile(use_regex, flags)
         precompile_exceptions(self.exceptions, use_regex, flags)
 
@@ -238,15 +308,19 @@ class ReplacementList(list):
     are compiled only once.
     """
 
-    def __init__(self, use_regex, exceptions, case_insensitive, edit_summary):
+    def __init__(self, use_regex, exceptions, case_insensitive, edit_summary,
+                 name):
+        """Create a fix list which can contain multiple replacements."""
         super(ReplacementList, self).__init__()
         self.use_regex = use_regex
         self._exceptions = exceptions
         self.exceptions = None
         self.case_insensitive = case_insensitive
         self.edit_summary = edit_summary
+        self.name = name
 
     def _compile_exceptions(self, use_regex, flags):
+        """Compile the exceptions if not already done."""
         if not self.exceptions and self._exceptions is not None:
             self.exceptions = dict(self._exceptions)
             precompile_exceptions(self.exceptions, use_regex, flags)
@@ -258,30 +332,49 @@ class ReplacementListEntry(ReplacementBase):
 
     def __init__(self, old, new, fix_set, edit_summary=None,
                  default_summary=True):
+        """Create a replacement entry inside a fix set."""
         super(ReplacementListEntry, self).__init__(old, new, edit_summary,
                                                    default_summary)
         self.fix_set = fix_set
 
     @property
     def case_insensitive(self):
+        """Return whether the fix set is case insensitive."""
         return self.fix_set.case_insensitive
 
     @property
     def use_regex(self):
+        """Return whether the fix set is using regex."""
         return self.fix_set.use_regex
 
     @property
     def exceptions(self):
+        """Return the exceptions of the fix set."""
         return self.fix_set.exceptions
 
     @property
     def edit_summary(self):
+        """Return this entry's edit summary or the fix's summary."""
         if self._edit_summary is None:
             return self.fix_set.edit_summary
         else:
             return self._edit_summary
 
+    @property
+    def container(self):
+        """Container object which contains this replacement.
+
+        A container object is an object that groups one or more replacements
+        together and provides some properties that are common to all of them.
+        For example, containers may define a common name for a group of
+        replacements, or a common edit summary.
+
+        Container objects must have a "name" attribute.
+        """
+        return self.fix_set
+
     def _compile(self, use_regex, flags):
+        """Compile the search regex and the fix's exceptions."""
         super(ReplacementListEntry, self)._compile(use_regex, flags)
         self.fix_set._compile_exceptions(use_regex, flags)
 
@@ -386,25 +479,28 @@ class ReplaceRobot(Bot):
 
     """A bot that can do text replacements."""
 
+    @deprecated_args(acceptall='always')
     def __init__(self, generator, replacements, exceptions={},
-                 acceptall=False, allowoverlap=False, recursive=False,
-                 addedCat=None, sleep=None, summary='', site=None):
+                 always=False, allowoverlap=False, recursive=False,
+                 addedCat=None, sleep=None, summary='', site=None, **kwargs):
         """
         Constructor.
 
         Arguments:
             * generator    - A generator that yields Page objects.
-            * replacements - A list of 2-tuples of original text (as a
-                             compiled regular expression) and replacement
-                             text (as a string).
+            * replacements - A list of Replacement instances or sequences of
+                             length 2 with the  original text (as a compiled
+                             regular expression) and replacement text (as a
+                             string).
             * exceptions   - A dictionary which defines when not to change an
                              occurrence. See below.
-            * acceptall    - If True, the user won't be prompted before changes
+            * always       - If True, the user won't be prompted before changes
                              are made.
             * allowoverlap - If True, when matches overlap, all of them are
                              replaced.
             * addedCat     - If set to a value, add this category to every page
                              touched.
+                             It can be a string or a Category object.
 
         Structure of the exceptions dictionary:
         This dictionary can have these keys:
@@ -425,35 +521,51 @@ class ReplaceRobot(Bot):
                 exceptionRegexes dictionary in textlib.replaceExcept().
 
         """
-        super(ReplaceRobot, self).__init__()
-        self.generator = generator
+        super(ReplaceRobot, self).__init__(generator=generator,
+                                           always=always,
+                                           site=site,
+                                           **kwargs)
+
+        for i, replacement in enumerate(replacements):
+            if isinstance(replacement, collections.Sequence):
+                if len(replacement) != 2:
+                    raise ValueError('Replacement number {0} does not have '
+                                     'exactly two elements: {1}'.format(
+                                         i, replacement))
+                # Replacement assumes it gets strings but it's already compiled
+                replacements[i] = Replacement.from_compiled(replacement[0],
+                                                            replacement[1])
         self.replacements = replacements
         self.exceptions = exceptions
-        self.acceptall = acceptall
+        self.acceptall = always  # deprecated
         self.allowoverlap = allowoverlap
         self.recursive = recursive
-        if site:
-            self.site = site
+
         if addedCat:
-            cat_ns = site.category_namespaces()[0]
-            self.addedCat = pywikibot.Page(self.site,
-                                           cat_ns + ':' + addedCat)
+            if isinstance(addedCat, pywikibot.Category):
+                self.addedCat = addedCat
+            else:
+                self.addedCat = pywikibot.Category(self.site, addedCat)
+
         self.sleep = sleep
         self.summary = summary
         self.changed_pages = 0
+        self._pending_processed_titles = Queue()
 
-    def isTitleExcepted(self, title):
+    def isTitleExcepted(self, title, exceptions=None):
         """
         Return True iff one of the exceptions applies for the given title.
 
         @rtype: bool
         """
-        if "title" in self.exceptions:
-            for exc in self.exceptions['title']:
+        if exceptions is None:
+            exceptions = self.exceptions
+        if 'title' in exceptions:
+            for exc in exceptions['title']:
                 if exc.search(title):
                     return True
-        if "require-title" in self.exceptions:
-            for req in self.exceptions['require-title']:
+        if 'require-title' in exceptions:
+            for req in exceptions['require-title']:
                 if not req.search(title):
                     return True
         return False
@@ -470,7 +582,7 @@ class ReplaceRobot(Bot):
                     return True
         return False
 
-    def apply_replacements(self, original_text, applied):
+    def apply_replacements(self, original_text, applied, page=None):
         """
         Apply all replacements to the given text.
 
@@ -478,11 +590,35 @@ class ReplaceRobot(Bot):
         """
         def get_exceptions(exceptions):
             return exceptions.get('inside-tags', []) + exceptions.get('inside', [])
+
+        if page is None:
+            pywikibot.warn(
+                'You must pass the target page as the "page" parameter to '
+                'apply_replacements().', DeprecationWarning, stacklevel=2)
         new_text = original_text
         exceptions = get_exceptions(self.exceptions)
+        skipped_containers = set()
         for replacement in self.replacements:
             if self.sleep is not None:
                 time.sleep(self.sleep)
+            if (replacement.container and
+                    replacement.container.name in skipped_containers):
+                continue
+            elif page is not None and self.isTitleExcepted(
+                    page.title(), replacement.exceptions):
+                if replacement.container:
+                    pywikibot.output(
+                        'Skipping fix "{0}" on {1} because the title is on the '
+                        'exceptions list.'.format(
+                            replacement.container.name,
+                            page.title(asLink=True)))
+                    skipped_containers.add(replacement.container.name)
+                else:
+                    pywikibot.output(
+                        'Skipping unnamed replacement ({0}) on {1} because the '
+                        'title is on the exceptions list.'.format(
+                            replacement.description, page.title(asLink=True)))
+                continue
             old_text = new_text
             new_text = textlib.replaceExcept(
                 new_text, replacement.old_regex, replacement.new,
@@ -493,14 +629,25 @@ class ReplaceRobot(Bot):
 
         return new_text
 
-    def doReplacements(self, original_text):
-        return self.apply_replacements(original_text, set())
+    def doReplacements(self, original_text, page=None):
+        """Apply replacements to the given text and page."""
+        if page is None:
+            pywikibot.warn(
+                'You must pass the target page as the "page" parameter to '
+                'doReplacements().', DeprecationWarning, stacklevel=2)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            new_text = self.apply_replacements(original_text, set(), page=page)
+        return new_text
 
-    def count_changes(self, page, err):  # pylint: disable=unused-argument
-        """Count succesfully changed pages."""
+    def _count_changes(self, page, err):
+        """Count succesfully changed pages; log changed titles for display."""
         # This is an async put callback
         if not isinstance(err, Exception):
             self.changed_pages += 1
+            self._pending_processed_titles.put((page.title(asLink=True), True))
+        else:  # unsuccessful pages
+            self._pending_processed_titles.put((page.title(asLink=True), False))
 
     def generate_summary(self, applied_replacements):
         """Generate a summary message for the replacements."""
@@ -518,15 +665,16 @@ class ReplaceRobot(Bot):
             if self.summary:
                 summary_messages.insert(0, self.summary)
             else:
-                default_summary = ', '.join(
+                comma = self.site.mediawiki_message('comma-separator')
+                default_summary = comma.join(
                     u'-{0} +{1}'.format(*default_summary)
                     for default_summary in default_summaries)
                 summary_messages.insert(0, i18n.twtranslate(
-                    pywikibot.Site(), 'replace-replacing',
-                    {'description':
-                     u' ({0})'.format(default_summary)}
+                    self.site, 'replace-replacing',
+                    {'description': u' ({0})'.format(default_summary)}
                 ))
-        return u'; '.join(summary_messages)
+        semicolon = self.site.mediawiki_message('semicolon-separator')
+        return semicolon.join(summary_messages)
 
     def run(self):
         """Start the bot."""
@@ -559,15 +707,18 @@ class ReplaceRobot(Bot):
                 last_text = None
                 while new_text != last_text:
                     last_text = new_text
-                    new_text = self.apply_replacements(last_text, applied)
+                    new_text = self.apply_replacements(last_text, applied,
+                                                       page)
                     if not self.recursive:
                         break
                 if new_text == original_text:
                     pywikibot.output(u'No changes were necessary in %s'
                                      % page.title(asLink=True))
                     break
-                if hasattr(self, "addedCat"):
-                    cats = page.categories(nofollow_redirects=True)
+                if hasattr(self, 'addedCat'):
+                    # Fetch only categories in wikitext, otherwise the others will
+                    # be explicitly added.
+                    cats = textlib.getCategoryLinks(new_text, site=page.site)
                     if self.addedCat not in cats:
                         cats.append(self.addedCat)
                         new_text = textlib.replaceCategoryLinks(new_text,
@@ -575,10 +726,10 @@ class ReplaceRobot(Bot):
                                                                 site=page.site)
                 # Show the title of the page we're working on.
                 # Highlight the title in purple.
-                pywikibot.output(u"\n\n>>> \03{lightpurple}%s\03{default} <<<"
-                                 % page.title())
+                pywikibot.output(color_format(
+                    '\n\n>>> {lightpurple}{0}{default} <<<', page.title()))
                 pywikibot.showDiff(original_text, new_text)
-                if self.acceptall:
+                if self.getOption('always'):
                     break
                 choice = pywikibot.input_choice(
                     u'Do you want to accept these changes?',
@@ -593,11 +744,7 @@ class ReplaceRobot(Bot):
                         new_text = as_edited
                     continue
                 if choice == 'b':
-                    webbrowser.open("http://%s%s" % (
-                        page.site.hostname(),
-                        page.site.nice_get_address(page.title(asUrl=True))
-                    ))
-                    i18n.input('pywikibot-enter-finished-browser')
+                    pywikibot.bot.open_webbrowser(page)
                     try:
                         original_text = page.get(get_redirect=True, force=True)
                     except pywikibot.NoPage:
@@ -607,14 +754,22 @@ class ReplaceRobot(Bot):
                     new_text = original_text
                     continue
                 if choice == 'a':
-                    self.acceptall = True
+                    self.options['always'] = True
                 if choice == 'y':
-                    page.put_async(new_text, self.generate_summary(applied), callback=self.count_changes)
+                    page.text = new_text
+                    page.save(summary=self.generate_summary(applied), async=True,
+                              callback=self._count_changes, quiet=True)
+                while not self._pending_processed_titles.empty():
+                    proc_title, res = self._pending_processed_titles.get()
+                    pywikibot.output('Page %s%s saved'
+                                     % (proc_title, '' if res else ' not'))
                 # choice must be 'N'
                 break
-            if self.acceptall and new_text != original_text:
+            if self.getOption('always') and new_text != original_text:
                 try:
-                    page.put(new_text, self.generate_summary(applied), callback=self.count_changes)
+                    page.text = new_text
+                    page.save(summary=self.generate_summary(applied),
+                              callback=self._count_changes, quiet=True)
                 except pywikibot.EditConflict:
                     pywikibot.output(u'Skipping %s because of edit conflict'
                                      % (page.title(),))
@@ -628,13 +783,18 @@ class ReplaceRobot(Bot):
                 except pywikibot.PageNotSaved as error:
                     pywikibot.output(u'Error putting page: %s'
                                      % (error.args,))
+                if self._pending_processed_titles.qsize() > 50:
+                    while not self._pending_processed_titles.empty():
+                        proc_title, res = self._pending_processed_titles.get()
+                        pywikibot.output('Page %s%s saved'
+                                         % (proc_title, '' if res else ' not'))
 
 
 def prepareRegexForMySQL(pattern):
     """Convert regex to MySQL syntax."""
-    pattern = pattern.replace('\s', '[:space:]')
-    pattern = pattern.replace('\d', '[:digit:]')
-    pattern = pattern.replace('\w', '[:alnum:]')
+    pattern = pattern.replace(r'\s', '[:space:]')
+    pattern = pattern.replace(r'\d', '[:digit:]')
+    pattern = pattern.replace(r'\w', '[:alnum:]')
 
     pattern = pattern.replace("'", "\\" + "'")
     # pattern = pattern.replace('\\', '\\\\')
@@ -663,10 +823,10 @@ def main(*args):
     replacements = []
     # Don't edit pages which contain certain texts.
     exceptions = {
-        'title':         [],
+        'title': [],
         'text-contains': [],
-        'inside':        [],
-        'inside-tags':   [],
+        'inside': [],
+        'inside-tags': [],
         'require-title': [],  # using a seperate requirements dict needs some
     }                        # major refactoring of code.
 
@@ -697,6 +857,9 @@ def main(*args):
     sleep = None
     # Request manual replacements even if replacements are already defined
     manual_input = False
+    # Replacements loaded from a file
+    replacement_file = None
+    replacement_file_arg_misplaced = False
 
     # Read commandline parameters.
 
@@ -749,17 +912,60 @@ def main(*args):
             add_cat = arg[8:]
         elif arg.startswith('-summary:'):
             edit_summary = arg[9:]
+        elif arg.startswith('-automaticsummary'):
+            edit_summary = True
         elif arg.startswith('-allowoverlap'):
             allowoverlap = True
         elif arg.startswith('-manualinput'):
             manual_input = True
+        elif arg.startswith('-replacementfile'):
+            issue_deprecation_warning(
+                '-replacementfile',
+                '-pairsfile',
+                2, ArgumentDeprecationWarning)
+        elif arg.startswith('-pairsfile'):
+            if len(commandline_replacements) % 2:
+                replacement_file_arg_misplaced = True
+
+            if arg == '-pairsfile':
+                replacement_file = pywikibot.input(
+                    u'Please enter the filename to read replacements from:')
+            else:
+                replacement_file = arg[len('-pairsfile:'):]
         else:
             commandline_replacements.append(arg)
 
     site = pywikibot.Site()
 
-    if (len(commandline_replacements) % 2):
-        raise pywikibot.Error('require even number of replacements.')
+    if len(commandline_replacements) % 2:
+        pywikibot.error('Incomplete command line pattern replacement pair.')
+        return False
+
+    if replacement_file_arg_misplaced:
+        pywikibot.error(
+            '-pairsfile used between a pattern replacement pair.')
+        return False
+
+    if replacement_file:
+        try:
+            with codecs.open(replacement_file, 'r', 'utf-8') as f:
+                # strip newlines, but not other characters
+                file_replacements = f.read().splitlines()
+        except (IOError, OSError) as e:
+            pywikibot.error(u'Error loading {0}: {1}'.format(
+                replacement_file, e))
+            return False
+
+        if len(file_replacements) % 2:
+            pywikibot.error(
+                '{0} contains an incomplete pattern replacement pair.'.format(
+                    replacement_file))
+            return False
+
+        # Strip BOM from first line
+        file_replacements[0].lstrip(u'\uFEFF')
+        commandline_replacements.extend(file_replacements)
+
     if not(commandline_replacements or fixes_set) or manual_input:
         old = pywikibot.input(u'Please enter the text that should be replaced:')
         while old:
@@ -769,6 +975,7 @@ def main(*args):
                 'Please enter another text that should be replaced,'
                 '\nor press Enter to start:')
 
+    # The summary stored here won't be actually used but is only an example
     single_summary = None
     for i in range(0, len(commandline_replacements), 2):
         replacement = Replacement(commandline_replacements[i],
@@ -781,26 +988,22 @@ def main(*args):
             )
         replacements.append(replacement)
 
-    if not edit_summary:
-        if single_summary:
-            pywikibot.output(u'The summary message for the command line '
-                             'replacements will be something like: %s'
-                             % single_summary)
-        if fixes_set:
-            pywikibot.output('If a summary is defined for the fix, this '
-                             'default summary won\'t be applied.')
-        edit_summary = pywikibot.input(
-            'Press Enter to use this automatic message, or enter a '
-            'description of the\nchanges your bot will make:')
-
     # Perform one of the predefined actions.
-    for fix in fixes_set:
+    missing_fixes_summaries = []  # which a fixes/replacements miss a summary
+    for fix_name in fixes_set:
         try:
-            fix = fixes.fixes[fix]
+            fix = fixes.fixes[fix_name]
         except KeyError:
             pywikibot.output(u'Available predefined fixes are: %s'
                              % ', '.join(fixes.fixes.keys()))
+            if not fixes.user_fixes_loaded:
+                pywikibot.output('The user fixes file could not be found: '
+                                 '{0}'.format(fixes.filename))
             return
+        if not fix['replacements']:
+            pywikibot.warning('No replacements defined for fix '
+                              '"{0}"'.format(fix_name))
+            continue
         if "msg" in fix:
             if isinstance(fix['msg'], basestring):
                 set_summary = i18n.twtranslate(site, str(fix['msg']))
@@ -811,15 +1014,58 @@ def main(*args):
         replacement_set = ReplacementList(fix.get('regex'),
                                           fix.get('exceptions'),
                                           fix.get('nocase'),
-                                          set_summary)
-        for replacement in fix['replacements']:
+                                          set_summary,
+                                          name=fix_name)
+        # Whether some replacements have a summary, if so only show which
+        # have none, otherwise just mention the complete fix
+        missing_fix_summaries = []
+        for index, replacement in enumerate(fix['replacements'], start=1):
             summary = None if len(replacement) < 3 else replacement[2]
-            replacements.append(ReplacementListEntry(
+            if not set_summary and not summary:
+                missing_fix_summaries.append(
+                    '"{0}" (replacement #{1})'.format(fix_name, index))
+            if chars.contains_invisible(replacement[0]):
+                pywikibot.warning('The old string "{0}" contains formatting '
+                                  'characters like U+200E'.format(
+                                      chars.replace_invisible(replacement[0])))
+            if (not callable(replacement[1]) and
+                    chars.contains_invisible(replacement[1])):
+                pywikibot.warning('The new string "{0}" contains formatting '
+                                  'characters like U+200E'.format(
+                                      chars.replace_invisible(replacement[1])))
+            replacement_set.append(ReplacementListEntry(
                 old=replacement[0],
                 new=replacement[1],
                 fix_set=replacement_set,
                 edit_summary=summary,
             ))
+
+        if replacement_set:
+            replacements.extend(replacement_set)
+
+        if len(fix['replacements']) == len(missing_fix_summaries):
+            missing_fixes_summaries.append(
+                '"{0}" (all replacements)'.format(fix_name))
+        else:
+            missing_fixes_summaries += missing_fix_summaries
+
+    if ((not edit_summary or edit_summary is True) and
+            (missing_fixes_summaries or single_summary)):
+        if single_summary:
+            pywikibot.output(u'The summary message for the command line '
+                             'replacements will be something like: %s'
+                             % single_summary)
+        if missing_fixes_summaries:
+            pywikibot.output('The summary will not be used when the fix has '
+                             'one defined but the following fix(es) do(es) not '
+                             'have a summary defined: '
+                             '{0}'.format(', '.join(missing_fixes_summaries)))
+        if edit_summary is not True:
+            edit_summary = pywikibot.input(
+                'Press Enter to use this automatic message, or enter a '
+                'description of the\nchanges your bot will make:')
+        else:
+            edit_summary = ''
 
     # Set the regular expression flags
     flags = re.UNICODE
@@ -865,9 +1111,8 @@ LIMIT 200""" % (whereClause, exceptClause)
     gen = genFactory.getCombinedGenerator(gen)
 
     if not gen:
-        # syntax error, show help text from the top of this file
-        pywikibot.showHelp('replace')
-        return
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
     preloadingGen = pagegenerators.PreloadingGenerator(gen)
     bot = ReplaceRobot(preloadingGen, replacements, exceptions, acceptall,

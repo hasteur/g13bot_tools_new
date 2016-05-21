@@ -1,10 +1,11 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 Script to copy images to Wikimedia Commons, or to another wiki.
 
 Syntax:
 
-    python imagetransfer.py pagename [-interwiki] [-tolang:xx] [-tofamily:yy]
+    python pwb.py imagetransfer pagename [-interwiki] [-tolang:x] [-tofamily:y]
 
 Arguments:
 
@@ -12,12 +13,12 @@ Arguments:
 
   -keepname    Keep the filename and do not verify description while replacing
 
-  -tolang:xx   Copy the image to the wiki in language xx
+  -tolang:x    Copy the image to the wiki in language x
 
-  -tofamily:yy Copy the image to a wiki in the family yy
+  -tofamily:y  Copy the image to a wiki in the family y
 
-  -file:zz     Upload many files from textfile: [[Image:xx]]
-                                                [[Image:yy]]
+  -file:z      Upload many files from textfile: [[Image:x]]
+                                                [[Image:y]]
 
 If pagename is an image description page, offers to copy the image to the
 target site. If it is a normal page, it will offer to copy any of the images
@@ -26,40 +27,25 @@ used on a page reachable via interwiki links.
 """
 #
 # (C) Andre Engels, 2004
-# (C) Pywikibot team, 2004-2014
+# (C) Pywikibot team, 2004-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import re
 import sys
-import pywikibot
-import upload
-from pywikibot import config, i18n, textlib
 
-copy_message = {
-    'ar': u"هذه الصورة تم نقلها من %s. الوصف الأصلي كان:\r\n\r\n%s",
-    'en': u"This image was copied from %s. The original description was:\r\n\r\n%s",
-    'fa': u"تصویر از %s کپی شده‌است.توضیحات اصلی ان این بود::\r\n\r\n%s",
-    'de': u"Dieses Bild wurde von %s kopiert. Die dortige Beschreibung lautete:\r\n\r\n%s",
-    'fr': u"Cette image est copiée de %s. La description originale était:\r\n\r\n%s",
-    'he': u"תמונה זו הועתקה מהאתר %s. תיאור הקובץ המקורי היה:\r\n\r\n%s",
-    'hu': u"Kép másolása innen: %s. Az eredeti leírás:\r\n\r\n%s",
-    'ia': u"Iste imagine esseva copiate de %s. Le description original esseva:\r\n\r\n%s",
-    'it': u"Questa immagine è stata copiata da %s. La descrizione originale era:\r\n\r\n%s",
-    'kk': u"Бұл сурет %s дегеннен көшірілді. Түпнұсқа сипатттамасы былай болды:\r\n\r\n%s",
-    'lt': u"Šis paveikslėlis buvo įkeltas iš %s. Originalus aprašymas buvo:\r\n\r\n%s",
-    'nl': u"Afbeelding gekopieerd vanaf %s. De beschrijving daar was:\r\n\r\n%s",
-    'pl': u"Ten obraz został skopiowany z %s. Oryginalny opis to:\r\n\r\n%s",
-    'pt': u"Esta imagem foi copiada de %s. A descrição original foi:\r\n\r\n%s",
-    'ru': u"Изображение было скопировано с %s. Оригинальное описание содержало:\r\n\r\n%s",
-    'sr': u"Ова слика је копирана са %s. Оригинални опис је:\r\n\r\n%s",
-    'zh': u"本圖像從 %s 複製，原始說明資料：\r\n\r\n%s",
-}
+import pywikibot
+
+from pywikibot import config, i18n, pagegenerators, textlib
+
+from scripts import upload
 
 nowCommonsTemplate = {
-    'ar': u'{{subst:الآن_كومنز|Image:%s}}',
+    'ar': u'{{الآن كومنز|%s}}',
     'de': u'{{NowCommons|%s}}',
     'fr': u'{{Désormais sur Commons|%s}}',
     'en': u'{{subst:ncd|Image:%s}}',
@@ -78,27 +64,6 @@ nowCommonsTemplate = {
     'pt': u'{{NowCommons|%s}}',
     'sr': u'{{NowCommons|%s}}',
     'zh': u'{{NowCommons|Image:%s}}',
-}
-
-nowCommonsMessage = {
-    'ar': u'الملف الآن متوفر في ويكيميديا كومنز.',
-    'de': u'Datei ist jetzt auf Wikimedia Commons verfügbar.',
-    'en': u'File is now available on Wikimedia Commons.',
-    'eo': u'Dosiero nun estas havebla en la Wikimedia-Komunejo.',
-    'fa': u'پرونده اکنون در انبار است',
-    'he': u'הקובץ זמין כעת בוויקישיתוף.',
-    'hu': u'A fájl most már elérhető a Wikimedia Commonson',
-    'ia': u'Le file es ora disponibile in Wikimedia Commons.',
-    'ja': u'ファイルはウィキメディア・コモンズにあります',
-    'it': u'L\'immagine è adesso disponibile su Wikimedia Commons.',
-    'kk': u'Файлды енді Wikimedia Ортаққорынан қатынауға болады.',
-    'lt': u'Failas įkeltas į Wikimedia Commons projektą.',
-    'nl': u'Dit bestand staat nu op [[w:nl:Wikimedia Commons|Wikimedia Commons]].',
-    'pl': u'Plik jest teraz dostępny na Wikimedia Commons.',
-    'pt': u'Arquivo está agora na Wikimedia Commons.',
-    'ru': u'[[ВП:КБУ#Ф8|Ф.8]]: доступно на [[Викисклад]]е',
-    'sr': u'Слика је сада доступна и на Викимедија Остави.',
-    'zh': u'檔案已存在於維基共享資源。',
 }
 
 # Translations for license templates.
@@ -150,12 +115,13 @@ licenseTemplates = {
 }
 
 
-class ImageTransferBot:
+class ImageTransferBot(object):
 
     """Image transfer bot."""
 
     def __init__(self, generator, targetSite=None, interwiki=False,
                  keep_name=False, ignore_warning=False):
+        """Constructor."""
         self.generator = generator
         self.interwiki = interwiki
         self.targetSite = targetSite
@@ -175,17 +141,21 @@ class ImageTransferBot:
         try:
             description = sourceImagePage.get()
             # try to translate license templates
-            if (sourceSite.sitename(), self.targetSite.sitename()) in licenseTemplates:
-                for old, new in licenseTemplates[(sourceSite.sitename(),
-                                                  self.targetSite.sitename())].items():
+            if (sourceSite.sitename,
+                    self.targetSite.sitename) in licenseTemplates:
+                for old, new in licenseTemplates[
+                        (sourceSite.sitename,
+                         self.targetSite.sitename)].items():
                     new = '{{%s}}' % new
                     old = re.compile('{{%s}}' % old)
                     description = textlib.replaceExcept(description, old, new,
                                                         ['comment', 'math',
                                                          'nowiki', 'pre'])
 
-            description = i18n.translate(self.targetSite, copy_message,
-                                         fallback=True) % (sourceSite, description)
+            description = i18n.twtranslate(self.targetSite,
+                                           'imagetransfer-file_page_message',
+                                           dict(site=sourceSite,
+                                                description=description))
             description += '\n\n'
             description += sourceImagePage.getFileVersionHistoryTable()
             # add interwiki link
@@ -209,7 +179,8 @@ class ImageTransferBot:
             if targetFilename and self.targetSite.family.name == 'commons' and \
                self.targetSite.code == 'commons':
                 # upload to Commons was successful
-                reason = i18n.translate(sourceSite, nowCommonsMessage, fallback=True)
+                reason = i18n.twtranslate(sourceSite,
+                                          'imagetransfer-nowcommons_notice')
                 # try to delete the original image if we have a sysop account
                 if sourceSite.family.name in config.sysopnames and \
                    sourceSite.lang in config.sysopnames[sourceSite.family.name]:
@@ -224,9 +195,10 @@ class ImageTransferBot:
                     sourceImagePage.put(sourceImagePage.get() + '\n\n' +
                                         nowCommonsTemplate[sourceSite.lang]
                                         % targetFilename,
-                                        comment=nowCommonsMessage[sourceSite.lang])
+                                        summary=reason)
 
     def showImageList(self, imagelist):
+        """Print image list."""
         for i in range(len(imagelist)):
             image = imagelist[i]
             print("-" * 60)
@@ -241,7 +213,7 @@ class ImageTransferBot:
                 # to upload anyway, using another name.
                 try:
                     # Maybe the image is on the target site already
-                    targetTitle = '%s:%s' % (self.targetSite.image_namespace(),
+                    targetTitle = '%s:%s' % (self.targetSite.namespaces.FILE,
                                              image.title().split(':', 1)[1])
                     targetImage = pywikibot.Page(self.targetSite, targetTitle)
                     targetImage.get()
@@ -262,18 +234,20 @@ class ImageTransferBot:
         print("=" * 60)
 
     def run(self):
+        """Run the bot."""
         for page in self.generator:
             if self.interwiki:
                 imagelist = []
                 for linkedPage in page.interwiki():
-                    imagelist.append(linkedPage.imagelinks(followRedirects=True))
+                    linkedPage = pywikibot.Page(linkedPage)
+                    imagelist.extend(
+                        linkedPage.imagelinks(
+                            followRedirects=True))
             elif page.isImage():
                 imagePage = pywikibot.FilePage(page.site, page.title())
                 imagelist = [imagePage]
             else:
-                imagePage = (page.imagelinks(followRedirects=True)).result(
-                    {'title': page.title(), 'ns': pywikibot.Site().image_namespace()})
-                imagelist = [imagePage]
+                imagelist = list(page.imagelinks(followRedirects=True))
 
             while len(imagelist) > 0:
                 self.showImageList(imagelist)
@@ -288,9 +262,12 @@ class ImageTransferBot:
                         break
                     todo = int(todo)
                 if todo in range(len(imagelist)):
-                    if imagelist[todo].fileIsShared():
+                    if (imagelist[todo].fileIsShared() and
+                            imagelist[todo].site.image_repository() ==
+                            self.targetSite.image_repository()):
                         pywikibot.output(
-                            u'The image is already on Wikimedia Commons.')
+                            'The image is already shared on {0}.'.format(
+                                self.targetSite.image_repository()))
                     else:
                         self.transferImage(imagelist[todo])
                     # remove the selected image from the list
@@ -308,7 +285,6 @@ def main(*args):
     @param args: command line arguments
     @type args: list of unicode
     """
-    pageTitle = None
     gen = None
 
     interwiki = False
@@ -317,6 +293,8 @@ def main(*args):
     targetFamily = None
 
     local_args = pywikibot.handle_args(args)
+    generator_factory = pagegenerators.GeneratorFactory(
+        positional_arg_name='page')
 
     for arg in local_args:
         if arg == '-interwiki':
@@ -327,15 +305,13 @@ def main(*args):
             targetLang = arg[8:]
         elif arg.startswith('-tofamily:'):
             targetFamily = arg[10:]
-        elif not pageTitle:
-            pageTitle = arg
+        else:
+            generator_factory.handleArg(arg)
 
-    if pageTitle:
-        page = pywikibot.Page(pywikibot.Site(), pageTitle)
-        gen = iter([page])
-    else:
-        pywikibot.showHelp()
-        return
+    gen = generator_factory.getCombinedGenerator()
+    if not gen:
+        pywikibot.bot.suggest_help(missing_parameters=['page'])
+        return False
 
     if not targetLang and not targetFamily:
         targetSite = pywikibot.Site('commons', 'commons')

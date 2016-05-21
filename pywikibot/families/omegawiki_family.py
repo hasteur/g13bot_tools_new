@@ -1,21 +1,23 @@
 # -*- coding: utf-8  -*-
 """Family module for Omega Wiki."""
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 from pywikibot import family
 
 
 # Omegawiki, the Ultimate online dictionary
-class Family(family.Family):
+class Family(family.SingleSiteFamily):
 
     """Family class for Omega Wiki."""
 
     name = 'omegawiki'
-    langs = {'omegawiki': 'www.omegawiki.org'}
+    domain = 'www.omegawiki.org'
 
     def __init__(self):
         """Constructor."""
-        family.Family.__init__(self)
+        super(Family, self).__init__()
 
         # On most Wikipedias page names must start with a capital letter, but some
         # languages don't use this.

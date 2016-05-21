@@ -1,6 +1,5 @@
-#!usr/bin/python
+#!/usr/bin/python
 # -*- coding: utf-8  -*-
-
 """Create country sub-division redirect pages.
 
 Check if they are in the form Something, State, and if so, create a redirect
@@ -20,12 +19,16 @@ PRE-REQUISITE : Need to install python-pycountry library.
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import re
 import sys
+
 import pywikibot
+
 from pywikibot import i18n
 
 try:
@@ -35,13 +38,6 @@ except ImportError:
     pywikibot.error('See: https://pypi.python.org/pypi/pycountry')
     pywikibot.exception()
     sys.exit(1)
-
-msg = {
-    'en': 'Creating state abbreviation redirect',
-    'ar': u'إنشاء تحويلة اختصار الولاية',
-    'fa': u'ایجاد تغییرمسیر برای نام اختصاری ایالت',
-    'he': u'יוצר הפניה מראשי התיבות של המדינה',
-}
 
 
 class StatesRedirectBot(pywikibot.Bot):
@@ -71,7 +67,7 @@ class StatesRedirectBot(pywikibot.Bot):
             self.abbrev[subd.name] = subd.code[3:]
 
     def treat(self, page):
-        """ Re-directing process.
+        """Re-directing process.
 
         Check if pages are in the given form Something, State, and
         if so, create a redirect from Something, ST..
@@ -97,34 +93,41 @@ class StatesRedirectBot(pywikibot.Bot):
                             % goal)
                 except pywikibot.IsNotRedirectPage:
                     pywikibot.warning(
-                        u"Page %s already exists and is not a redirect\
-                        Please check page!"
+                        u"Page %s already exists and is not a redirect "
+                        u"Please check page!"
                         % pl.title())
                 except pywikibot.NoPage:
                     change = ''
                     if page.isRedirectPage():
                         p2 = page.getRedirectTarget()
-                        pywikibot.output(u'Note: goal page is redirect.\
-                        Creating redirect ' u'to "%s" to avoid double\
-                            redirect.' % p2.title())
+                        pywikibot.output(
+                            u'Note: goal page is redirect.\nCreating redirect '
+                            u'to "%s" to avoid double redirect.' % p2.title())
                     else:
                         p2 = page
                     if self.force:
                         change = 'y'
                     else:
-                        change = pywikibot.input_choice(u'Create redirect\
-                                                        %s?' % pl.title(),
-                                                        (('yes', 'y'),
-                                                        ('no', 'n')))
+                        change = pywikibot.input_choice(
+                            u'Create redirect %s?' % pl.title(),
+                            (('yes', 'y'), ('no', 'n')))
                     if change == 'y':
-                        pl.text = '#REDIRECT [[%s]]' % p2.title()
-                        pl.save(i18n.translate(self.site, msg))
+                        pl.set_redirect_target(
+                            p2, create=True,
+                            summary=i18n.twtranslate(self.site,
+                                                     'states_redirect-comment'))
 
 
-def main():
-    """Process command line arguments and invoke UsStatesBot."""
-    # Process global arguments to determine desired site
-    local_args = pywikibot.handleArgs()
+def main(*args):
+    """
+    Process command line arguments and invoke bot.
+
+    If args is an empty list, sys.argv is used.
+
+    @param args: command line arguments
+    @type args: list of unicode
+    """
+    local_args = pywikibot.handle_args(args)
     start = None
     force = False
 

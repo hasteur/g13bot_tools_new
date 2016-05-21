@@ -1,18 +1,79 @@
 # -*- coding: utf-8  -*-
 """Tests for isbn script."""
 #
-# (C) Pywikibot team, 2014
+# (C) Pywikibot team, 2014-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 import pywikibot
 
 __version__ = '$Id$'
 
-from scripts.isbn import ISBN10, ISBN13, InvalidIsbnException as IsbnExc, \
-    getIsbn, hyphenateIsbnNumbers, convertIsbn10toIsbn13, main
-from tests.aspects import TestCase, unittest
-from pywikibot import Bot
+try:
+    from stdnum.exceptions import ValidationError as StdNumValidationError
+except ImportError:
+    StdNumValidationError = None
+
+from pywikibot import Bot, Claim, ItemPage
+from pywikibot.cosmetic_changes import CosmeticChangesToolkit, CANCEL_MATCH
+
+from scripts.isbn import (
+    ISBN10, ISBN13, InvalidIsbnException as IsbnExc,
+    getIsbn, hyphenateIsbnNumbers, convertIsbn10toIsbn13,
+    main
+)
+
+from tests.aspects import (
+    unittest, TestCase, DefaultDrySiteTestCase,
+    WikibaseTestCase, ScriptMainTestCase,
+)
+from tests.bot_tests import TWNBotTestCase
+
+if StdNumValidationError:
+    AnyIsbnValidationException = (StdNumValidationError, IsbnExc)
+else:
+    AnyIsbnValidationException = IsbnExc
+
+
+class TestCosmeticChangesISBN(DefaultDrySiteTestCase):
+
+    """Test CosmeticChanges ISBN fix."""
+
+    def test_valid_isbn(self):
+        """Test ISBN."""
+        cc = CosmeticChangesToolkit(self.site, namespace=0)
+
+        text = cc.fix_ISBN(' ISBN 097522980x ')
+        self.assertEqual(text, ' ISBN 0-9752298-0-X ')
+
+        text = cc.fix_ISBN(' ISBN 9780975229804 ')
+        self.assertEqual(text, ' ISBN 978-0-9752298-0-4 ')
+
+    def test_invalid_isbn(self):
+        """Test that it'll fail when the ISBN is invalid."""
+        cc = CosmeticChangesToolkit(self.site, namespace=0)
+
+        # Invalid characters
+        self.assertRaises(AnyIsbnValidationException,
+                          cc.fix_ISBN, 'ISBN 0975229LOL')
+        # Invalid checksum
+        self.assertRaises(AnyIsbnValidationException,
+                          cc.fix_ISBN, 'ISBN 0975229801')
+        # Invalid length
+        self.assertRaises(AnyIsbnValidationException,
+                          cc.fix_ISBN, 'ISBN 09752298')
+        # X in the middle
+        self.assertRaises(AnyIsbnValidationException,
+                          cc.fix_ISBN, 'ISBN 09752X9801')
+
+    def test_ignore_invalid_isbn(self):
+        """Test fixing ISBN numbers with an invalid ISBN."""
+        cc = CosmeticChangesToolkit(self.site, namespace=0, ignore=CANCEL_MATCH)
+
+        text = cc.fix_ISBN(' ISBN 0975229LOL ISBN 9780975229804 ')
+        self.assertEqual(text, ' ISBN 0975229LOL ISBN 978-0-9752298-0-4 ')
 
 
 class TestIsbn(TestCase):
@@ -89,7 +150,7 @@ class TestIsbn(TestCase):
                                isbn.format)
 
 
-class TestIsbnBot(TestCase):
+class TestIsbnBot(ScriptMainTestCase):
 
     """Test isbnbot with non-write patching (if the testpage exists)."""
 
@@ -100,15 +161,18 @@ class TestIsbnBot(TestCase):
     write = True
 
     def setUp(self):
+        """Patch the Bot class to avoid an actual write."""
         self._original_userPut = Bot.userPut
         Bot.userPut = userPut_dummy
         super(TestIsbnBot, self).setUp()
 
     def tearDown(self):
+        """Unpatch the Bot class."""
         Bot.userPut = self._original_userPut
         super(TestIsbnBot, self).tearDown()
 
     def test_isbn(self):
+        """Test the ISBN bot."""
         site = self.get_site()
         p1 = pywikibot.Page(site, 'User:M4tx/IsbnTest')
         # Create the page if it does not exist
@@ -120,8 +184,74 @@ class TestIsbnBot(TestCase):
 
 
 def userPut_dummy(self, page, oldtext, newtext, **kwargs):
+    """Avoid that userPut writes."""
     TestIsbnBot.newtext = newtext
 
+
+class TestIsbnWikibaseBot(ScriptMainTestCase, WikibaseTestCase, TWNBotTestCase):
+
+    """Test isbnbot on Wikibase site with non-write patching."""
+
+    family = 'wikidata'
+    code = 'test'
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test class."""
+        super(TestIsbnWikibaseBot, cls).setUpClass()
+
+        # Check if the unit test item page and the property both exist
+        item_ns = cls.get_repo().item_namespace
+        for page in cls.get_site().search('IsbnWikibaseBotUnitTest',
+                                          total=1, namespaces=item_ns):
+            cls.test_page_qid = page.title()
+            item_page = ItemPage(cls.get_repo(), page.title())
+            for pid, claims in item_page.get()['claims'].items():
+                for claim in claims:
+                    prop_page = pywikibot.PropertyPage(cls.get_repo(),
+                                                       claim.getID())
+                    prop_page.get()
+                    if ('ISBN-10' in prop_page.labels.values() and
+                            claim.getTarget() == '097522980x'):
+                        return
+            raise unittest.SkipTest(
+                u'%s: "ISBN-10" property was not found in '
+                u'"IsbnWikibaseBotUnitTest" item page' % cls.__name__)
+        raise unittest.SkipTest(
+            u'%s: "IsbnWikibaseBotUnitTest" item page was not found'
+            % cls.__name__)
+
+    def setUp(self):
+        """Patch Claim.setTarget and ItemPage.editEntity which write."""
+        TestIsbnWikibaseBot._original_setTarget = Claim.setTarget
+        Claim.setTarget = setTarget_dummy
+        TestIsbnWikibaseBot._original_editEntity = ItemPage.editEntity
+        ItemPage.editEntity = editEntity_dummy
+        super(TestIsbnWikibaseBot, self).setUp()
+
+    def tearDown(self):
+        """Unpatch the dummy methods."""
+        Claim.setTarget = TestIsbnWikibaseBot._original_setTarget
+        ItemPage.editEntity = TestIsbnWikibaseBot._original_editEntity
+        super(TestIsbnWikibaseBot, self).tearDown()
+
+    def test_isbn(self):
+        """Test using the bot and wikibase."""
+        main('-page:' + self.test_page_qid, '-always', '-format')
+        self.assertEqual(self.setTarget_value, '0-9752298-0-X')
+        main('-page:' + self.test_page_qid, '-always', '-to13')
+        self.assertTrue(self.setTarget_value, '978-0975229804')
+
+
+def setTarget_dummy(self, value):
+    """Avoid that setTarget writes."""
+    TestIsbnWikibaseBot.setTarget_value = value
+    TestIsbnWikibaseBot._original_setTarget(self, value)
+
+
+def editEntity_dummy(self, data=None, **kwargs):
+    """Avoid that editEntity writes."""
+    pass
 
 if __name__ == "__main__":
     unittest.main()

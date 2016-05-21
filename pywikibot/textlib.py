@@ -7,21 +7,19 @@ and return a unicode string.
 
 """
 #
-# (C) Pywikibot team, 2008-2014
+# (C) Pywikibot team, 2008-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
+import collections
 import datetime
 import re
 import sys
-
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
 
 if sys.version_info[0] > 2:
     from html.parser import HTMLParser
@@ -30,13 +28,95 @@ if sys.version_info[0] > 2:
 else:
     from HTMLParser import HTMLParser
 
-from pywikibot import config2 as config
+try:
+    import mwparserfromhell
+except ImportError as e:
+    mwparserfromhell = e
+
 import pywikibot
+
+from pywikibot import config2 as config
+from pywikibot.exceptions import InvalidTitle
 from pywikibot.family import Family
+from pywikibot.tools import (
+    deprecated,
+    DeprecatedRegex,
+    OrderedDict,
+    StringTypes,
+    UnicodeType,
+    issue_deprecation_warning
+)
 
+# cache for replaceExcept to avoid recompile or regexes each call
+_regex_cache = {}
 
-TEMP_REGEX = re.compile(
-    '{{(?:msg:)?(?P<name>[^{\|]+?)(?:\|(?P<params>[^{]+?(?:{[^{]+?}[^{]*?)?))?}}')
+# This regex is only for use by extract_templates_and_params_regex.
+# It does not support template variables consisting of nested templates,
+# system variables like {{CURRENTYEAR}}, or template variables like {{{1}}}.
+_ETP_REGEX = re.compile(
+    r'{{(?:msg:)?(?P<name>[^{\|]+?)'
+    r'(?:\|(?P<params>[^{]+?(?:{[^{]+?}[^{]*?)?)?)?}}')
+
+# This template is a more inclusive template matching algorithm
+# that allows system variables, but does not match nested templates.
+# It exists for backwards compatibility to the old 'TEMP_REGEX'
+# which was the _ETP_REGEX.
+TEMP_REGEX = DeprecatedRegex(r"""
+{{\s*(?:msg:\s*)?
+  (?P<name>[^{\|]+?)\s*
+  (?:\|(?P<params>[^{]*
+        (?:(?:{}|{{[A-Z]+(?:\:[^}])?}}|{{{[^}]+}}}) [^{]*)*
+       )?
+  )?
+}}
+""", re.VERBOSE, 'textlib.TEMP_REGEX', 'textlib.NESTED_TEMPLATE_REGEX')
+
+# The regex below collects nested templates, providing simpler
+# identification of templates used at the top-level of wikitext.
+# It doesnt match {{{1|...}}}, however it also does not match templates
+# with a numerical name. e.g. {{1|..}}. It will correctly match {{{x}} as
+# being {{x}} with leading '{' left in the wikitext.
+# Prefix msg: is not included in the 'name' group, but all others are
+# included for backwards compatibility with TEMP_REGEX.
+# Only parser functions using # are excluded.
+# When more than two levels of templates are found, this regex will
+# capture from the beginning of the first {{ to the end of the last }},
+# with wikitext between templates as part of the parameters of the first
+# template in the wikitext.
+# This ensures it fallsback to a safe mode for replaceExcept, as it
+# ensures that any replacement will not occur within template text.
+NESTED_TEMPLATE_REGEX = re.compile(r"""
+{{\s*(?:msg:\s*)?
+  (?P<name>[^{\|#0-9][^{\|#]*?)\s*
+  (?:\|(?P<params> [^{]*?
+          (({{{[^{}]+?}}}
+            |{{[^{}]+?}}
+            |{[^{}]*?}
+          ) [^{]*?
+        )*?
+    )?
+  )?
+}}
+|
+(?P<unhandled_depth>{{\s*[^{\|#0-9][^{\|#]*?\s* [^{]* {{ .* }})
+""", re.VERBOSE)
+
+# The following regex supports wikilinks anywhere after the first pipe
+# and correctly matches the end of the file link if the wikilink contains
+# [[ or ]].
+# The namespace names must be substituted into this regex.
+# e.g. FILE_LINK_REGEX % 'File' or FILE_LINK_REGEX % '|'.join(site.namespaces)
+FILE_LINK_REGEX = r"""
+\[\[\s*(?:%s)\s*:[^|]*?\s*
+  (\|
+    ( \[\[ [^[]*? \[\[ [^]]*? \]\] [^]]*? \]\]  # capture invalid syntax
+     | ( \[\[ .*? \]\] )? [^[]*?
+     | \[ [^]]*? \]
+    )*
+  )?
+\]\]
+"""
+
 NON_LATIN_DIGITS = {
     'ckb': u'٠١٢٣٤٥٦٧٨٩',
     'fa': u'۰۱۲۳۴۵۶۷۸۹',
@@ -80,6 +160,140 @@ def unescape(s):
     return s
 
 
+class _MultiTemplateMatchBuilder(object):
+
+    """Build template matcher."""
+
+    def __init__(self, site):
+        """Constructor."""
+        self.site = site
+
+    def pattern(self, template, flags=re.DOTALL):
+        """Return a compiled regex to match template."""
+        # TODO: add ability to also match contents within the template
+        # TODO: add option for template to be None to match any template
+        # TODO: use NESTED_TEMPLATE_REGEX with <parameters> instead of <params>
+        namespace = self.site.namespaces[10]
+        if isinstance(template, pywikibot.Page):
+            if template.namespace() == 10:
+                old = template.title(withNamespace=False)
+            else:
+                raise ValueError(
+                    '{0} is not a template Page object'.format(template))
+        elif isinstance(template, StringTypes):
+            old = template
+        else:
+            raise ValueError(
+                '{0!r} is not a valid template'.format(template))
+
+        if namespace.case == 'first-letter':
+            pattern = '[' + \
+                      re.escape(old[0].upper()) + \
+                      re.escape(old[0].lower()) + \
+                      ']' + re.escape(old[1:])
+        else:
+            pattern = re.escape(old)
+        pattern = re.sub(r'_|\\ ', r'[_ ]', pattern)
+        templateRegex = re.compile(r'\{\{ *(' + ':|'.join(namespace) +
+                                   r':|[mM][sS][gG]:)?' + pattern +
+                                   r'(?P<parameters>\s*\|.+?|) *}}',
+                                   flags)
+        return templateRegex
+
+    def search_any_predicate(self, templates):
+        """Return a predicate that matches any template."""
+        predicates = [self.pattern(template).search for template in templates]
+        return lambda text: any(predicate(text) for predicate in predicates)
+
+
+def _create_default_regexes():
+    """Fill (and possibly overwrite) _regex_cache with default regexes."""
+    _regex_cache.update({
+        'comment':      re.compile(r'(?s)<!--.*?-->'),
+        # section headers
+        'header':       re.compile(r'\r?\n=+.+=+ *\r?\n'),
+        # preformatted text
+        'pre':          re.compile(r'(?ism)<pre>.*?</pre>'),
+        'source':       re.compile(r'(?is)<source .*?</source>'),
+        # inline references
+        'ref':          re.compile(r'(?ism)<ref[ >].*?</ref>'),
+        'template':     NESTED_TEMPLATE_REGEX,
+        # lines that start with a space are shown in a monospace font and
+        # have whitespace preserved.
+        'startspace':   re.compile(r'(?m)^ (.*?)$'),
+        # tables often have whitespace that is used to improve wiki
+        # source code readability.
+        # TODO: handle nested tables.
+        'table':        re.compile(r'(?ims)^{\|.*?^\|}|<table>.*?</table>'),
+        'hyperlink':    compileLinkR(),
+        'gallery':      re.compile(r'(?is)<gallery.*?>.*?</gallery>'),
+        # this matches internal wikilinks, but also interwiki, categories, and
+        # images.
+        'link':         re.compile(r'\[\[[^\]\|]*(\|[^\]]*)?\]\]'),
+        # also finds links to foreign sites with preleading ":"
+        'interwiki':    (r'(?i)\[\[:?(%s)\s?:[^\]]*\]\][\s]*',
+                         lambda site: '|'.join(
+                             site.validLanguageLinks() +
+                             list(site.family.obsolete.keys()))),
+        # Wikibase property inclusions
+        'property':     re.compile(r'(?i)\{\{\s*#property:\s*p\d+\s*\}\}'),
+        # Module invocations (currently only Lua)
+        'invoke':       re.compile(r'(?i)\{\{\s*#invoke:.*?}\}'),
+        # categories
+        'category':     ('\[\[ *(?:%s)\s*:.*?\]\]',
+                         lambda site: '|'.join(site.namespaces[14])),
+        # files
+        'file':         (FILE_LINK_REGEX,
+                         lambda site: '|'.join(site.namespaces[6])),
+    })
+
+
+def _get_regexes(keys, site):
+    """Fetch compiled regexes."""
+    if not _regex_cache:
+        _create_default_regexes()
+
+    result = []
+    # 'dontTouchRegexes' exist to reduce git blame only.
+    dontTouchRegexes = result
+
+    for exc in keys:
+        if isinstance(exc, basestring):
+            # assume the string is a reference to a standard regex above,
+            # which may not yet have a site specific re compiled.
+            if exc in _regex_cache:
+                if type(_regex_cache[exc]) is tuple:
+                    if not site:
+                        issue_deprecation_warning(
+                            'site=None', 'a valid site', 3)
+                        site = pywikibot.Site()
+
+                    if (exc, site) not in _regex_cache:
+                        re_text, re_var = _regex_cache[exc]
+                        _regex_cache[(exc, site)] = re.compile(
+                            re_text % re_var(site), re.VERBOSE)
+
+                    result.append(_regex_cache[(exc, site)])
+                else:
+                    result.append(_regex_cache[exc])
+            else:
+                # nowiki, noinclude, includeonly, timeline, math ond other
+                # extensions
+                if exc not in _regex_cache:
+                    _regex_cache[exc] = re.compile(r'(?is)<%s>.*?</%s>'
+                                                   % (exc, exc))
+                result.append(_regex_cache[exc])
+            # handle alias
+            if exc == 'source':
+                dontTouchRegexes.append(re.compile(
+                    r'(?is)<syntaxhighlight .*?</syntaxhighlight>'))
+        else:
+            # assume it's a regular expression
+            dontTouchRegexes.append(exc)
+
+    return result
+
+
 def replaceExcept(text, old, new, exceptions, caseInsensitive=False,
                   allowoverlap=False, marker='', site=None):
     """
@@ -103,45 +317,6 @@ def replaceExcept(text, old, new, exceptions, caseInsensitive=False,
         if nothing is changed, it is added at the end
 
     """
-    if site is None:
-        site = pywikibot.Site()
-
-    exceptionRegexes = {
-        'comment':      re.compile(r'(?s)<!--.*?-->'),
-        # section headers
-        'header':       re.compile(r'\r?\n=+.+=+ *\r?\n'),
-        # preformatted text
-        'pre':          re.compile(r'(?ism)<pre>.*?</pre>'),
-        'source':       re.compile(r'(?is)<source .*?</source>'),
-        # inline references
-        'ref':          re.compile(r'(?ism)<ref[ >].*?</ref>'),
-        # lines that start with a space are shown in a monospace font and
-        # have whitespace preserved.
-        'startspace':   re.compile(r'(?m)^ (.*?)$'),
-        # tables often have whitespace that is used to improve wiki
-        # source code readability.
-        # TODO: handle nested tables.
-        'table':        re.compile(r'(?ims)^{\|.*?^\|}|<table>.*?</table>'),
-        'hyperlink':    compileLinkR(),
-        'gallery':      re.compile(r'(?is)<gallery.*?>.*?</gallery>'),
-        # this matches internal wikilinks, but also interwiki, categories, and
-        # images.
-        'link':         re.compile(r'\[\[[^\]\|]*(\|[^\]]*)?\]\]'),
-        # also finds links to foreign sites with preleading ":"
-        'interwiki':    re.compile(r'(?i)\[\[:?(%s)\s?:[^\]]*\]\][\s]*'
-                                   % '|'.join(site.validLanguageLinks() +
-                                              list(site.family.obsolete.keys()))),
-        # Wikibase property inclusions
-        'property':     re.compile(r'(?i)\{\{\s*#property:\s*p\d+\s*\}\}'),
-        # Module invocations (currently only Lua)
-        'invoke':       re.compile(r'(?i)\{\{\s*#invoke:.*?}\}'),
-        # categories
-        'category':     re.compile(u'\[\[ *(?:%s)\s*:.*?\]\]' % u'|'.join(site.namespace(14, all=True))),
-        # files
-        'file':         re.compile(u'\[\[ *(?:%s)\s*:.*?\]\]' % u'|'.join(site.namespace(6, all=True))),
-
-    }
-
     # if we got a string, compile it as a regular expression
     if isinstance(old, basestring):
         if caseInsensitive:
@@ -149,74 +324,17 @@ def replaceExcept(text, old, new, exceptions, caseInsensitive=False,
         else:
             old = re.compile(old)
 
-    dontTouchRegexes = []
-    except_templates = False
-    for exc in exceptions:
-        if isinstance(exc, basestring):
-            # assume it's a reference to the exceptionRegexes dictionary
-            # defined above.
-            if exc in exceptionRegexes:
-                dontTouchRegexes.append(exceptionRegexes[exc])
-            elif exc == 'template':
-                except_templates = True
-            else:
-                # nowiki, noinclude, includeonly, timeline, math ond other
-                # extensions
-                dontTouchRegexes.append(re.compile(r'(?is)<%s>.*?</%s>'
-                                                   % (exc, exc)))
-            # handle alias
-            if exc == 'source':
-                dontTouchRegexes.append(re.compile(
-                    r'(?is)<syntaxhighlight .*?</syntaxhighlight>'))
-        else:
-            # assume it's a regular expression
-            dontTouchRegexes.append(exc)
+    # early termination if not relevant
+    if not old.search(text):
+        return text + marker
 
-    # mark templates
-    # don't care about mw variables and parser functions
-    if except_templates:
-        marker1 = findmarker(text)
-        marker2 = findmarker(text, u'##', u'#')
-        Rvalue = re.compile('{{{.+?}}}')
-        Rmarker1 = re.compile('%(mark)s(\d+)%(mark)s' % {'mark': marker1})
-        Rmarker2 = re.compile('%(mark)s(\d+)%(mark)s' % {'mark': marker2})
-        # hide the flat template marker
-        dontTouchRegexes.append(Rmarker1)
-        origin = text
-        values = {}
-        count = 0
-        for m in Rvalue.finditer(text):
-            count += 1
-            # If we have digits between brackets, restoring from dict may fail.
-            # So we need to change the index. We have to search in the origin.
-            while u'}}}%d{{{' % count in origin:
-                count += 1
-            item = m.group()
-            text = text.replace(item, '%s%d%s' % (marker2, count, marker2))
-            values[count] = item
-        inside = {}
-        seen = set()
-        count = 0
-        while TEMP_REGEX.search(text) is not None:
-            for m in TEMP_REGEX.finditer(text):
-                item = m.group()
-                if item in seen:
-                    continue  # speed up
-                seen.add(item)
-                count += 1
-                while u'}}%d{{' % count in origin:
-                    count += 1
-                text = text.replace(item, '%s%d%s' % (marker1, count, marker1))
+    dontTouchRegexes = _get_regexes(exceptions, site)
 
-                # Make sure stored templates don't contain markers
-                for m2 in Rmarker1.finditer(item):
-                    item = item.replace(m2.group(), inside[int(m2.group(1))])
-                for m2 in Rmarker2.finditer(item):
-                    item = item.replace(m2.group(), values[int(m2.group(1))])
-                inside[count] = item
     index = 0
     markerpos = len(text)
     while True:
+        if index > len(text):
+            break
         match = old.search(text, index)
         if not match:
             # nothing left to replace
@@ -252,29 +370,32 @@ def replaceExcept(text, old, new, exceptions, caseInsensitive=False,
                 # We cannot just insert the new string, as it may contain regex
                 # group references such as \2 or \g<name>.
                 # On the other hand, this approach does not work because it
-                # can't handle lookahead or lookbehind (see bug #1731008):
+                # can't handle lookahead or lookbehind (see bug T123185):
                 #
                 #  replacement = old.sub(new, text[match.start():match.end()])
                 #  text = text[:match.start()] + replacement + text[match.end():]
 
                 # So we have to process the group references manually.
-                replacement = new
+                replacement = ''
 
-                groupR = re.compile(r'\\(?P<number>\d+)|\\g<(?P<name>.+?)>')
-                while True:
-                    groupMatch = groupR.search(replacement)
-                    if not groupMatch:
-                        break
-                    groupID = (groupMatch.group('name') or
-                               int(groupMatch.group('number')))
+                group_regex = re.compile(r'\\(\d+)|\\g<(.+?)>')
+                last = 0
+                for group_match in group_regex.finditer(new):
+                    group_id = group_match.group(1) or group_match.group(2)
                     try:
-                        replacement = (replacement[:groupMatch.start()] +
-                                       (match.group(groupID) or '') +
-                                       replacement[groupMatch.end():])
+                        group_id = int(group_id)
+                    except ValueError:
+                        pass
+                    try:
+                        replacement += new[last:group_match.start()]
+                        replacement += match.group(group_id) or ''
                     except IndexError:
-                        pywikibot.output('\nInvalid group reference: %s' % groupID)
+                        pywikibot.output('\nInvalid group reference: %s' % group_id)
                         pywikibot.output('Groups found:\n%s' % match.groups())
                         raise IndexError
+                    last = group_match.end()
+                replacement += new[last:]
+
             text = text[:match.start()] + replacement + text[match.end():]
 
             # continue the search on the remaining text
@@ -282,14 +403,11 @@ def replaceExcept(text, old, new, exceptions, caseInsensitive=False,
                 index = match.start() + 1
             else:
                 index = match.start() + len(replacement)
+            if not match.group():
+                # When the regex allows to match nothing, shift by one character
+                index += 1
             markerpos = match.start() + len(replacement)
     text = text[:markerpos] + marker + text[markerpos:]
-
-    if except_templates:  # restore templates from dict
-        for m2 in Rmarker1.finditer(text):
-            text = text.replace(m2.group(), inside[int(m2.group(1))])
-        for m2 in Rmarker2.finditer(text):
-            text = text.replace(m2.group(), values[int(m2.group(1))])
     return text
 
 
@@ -389,6 +507,23 @@ def findmarker(text, startwith=u'@@', append=None):
 
 
 def expandmarker(text, marker='', separator=''):
+    """
+    Return a marker expanded whitespace and the separator.
+
+    It searches for the first occurrence of the marker and gets the combination
+    of the separator and whitespace directly before it.
+
+    @param text: the text which will be searched.
+    @type text: str
+    @param marker: the marker to be searched.
+    @type marker: str
+    @param separator: the separator string allowed before the marker. If empty
+        it won't include whitespace too.
+    @type separator: str
+    @return: the marker with the separator and whitespace from the text in front
+        of it. It'll be just the marker if the separator is empty.
+    @rtype: str
+    """
     # set to remove any number of separator occurrences plus arbitrary
     # whitespace before, after, and between them,
     # by allowing to include them into marker.
@@ -409,6 +544,233 @@ def expandmarker(text, marker='', separator=''):
                 striploopcontinue = True
         marker = text[firstinseparator:firstinmarker] + marker
     return marker
+
+
+def replace_links(text, replace, site=None):
+    """
+    Replace wikilinks selectively.
+
+    The text is searched for a link and on each link it replaces the text
+    depending on the result for that link. If the result is just None it skips
+    that link. When it's False it unlinks it and just inserts the label. When it
+    is a Link instance it'll use the target, section and label from that Link
+    instance. If it's a Page instance it'll use just the target from the
+    replacement and the section and label from the original link.
+
+    If it's a string and the replacement was a sequence it converts it into a
+    Page instance. If the replacement is done via a callable it'll use it like
+    unlinking and directly replace the link with the text itself. It only
+    supports unicode when used by the callable and bytes (str in Python 2) are
+    not allowed.
+
+    If either the section or label should be used the replacement can be a
+    function which returns a Link instance and copies the value which should
+    remaining.
+
+    @param text: the text in which to replace links
+    @type  text: basestring
+    @param replace: either a callable which reacts like described above.
+        The callable must accept four parameters link, text, groups, rng and
+        allows for user interaction. The groups are a dict containing 'title',
+        'section', 'label' and 'linktrail' and the rng are the start and end
+        position of the link. The 'label' in groups contains everything after
+        the first pipe which might contain additional data which is used in File
+        namespace for example.
+        Alternatively it can be a sequence containing two items where the first
+        must be a Link or Page and the second has almost the same meaning as the
+        result by the callable. It'll convert that into a callable where the
+        first item (the Link or Page) has to be equal to the found link and in
+        that case it will apply the second value from the sequence.
+    @type  replace: sequence of pywikibot.Page/pywikibot.Link/str or
+        callable
+    @param site: a Site object to use if replace is not a sequence or the link
+        to be replaced is not a Link or Page instance.
+    @type  site: pywikibot.APISite
+    """
+    def to_link(source):
+        """Return the link from source when it's a Page otherwise itself."""
+        if isinstance(source, pywikibot.Page):
+            return source._link
+        elif isinstance(source, basestring):
+            return pywikibot.Link(source, site)
+        else:
+            return source
+
+    def sequence_replace(link, text, groups, rng):
+        if replace_items[0] == link:
+            return replace_items[1]
+        else:
+            return None
+
+    def check_replacement_class(replacement):
+        """Normalize the replacement into a list."""
+        if not isinstance(replacement, (pywikibot.Page, pywikibot.Link)):
+            raise ValueError('The replacement must be None, False, '
+                             'a sequence, a Link or a basestring but '
+                             'is "{0}"'.format(type(replacement)))
+
+    def title_section(l):
+        title = l.title
+        if l.section:
+            title += '#' + l.section
+        return title
+
+    if isinstance(replace, collections.Sequence):
+        if len(replace) != 2:
+            raise ValueError('When used as a sequence, the "replace" '
+                             'argument must contain exactly 2 items.')
+        replace_items = [to_link(replace[0]), replace[1]]
+        if not isinstance(replace_items[0], pywikibot.Link):
+            raise ValueError(
+                'The original value must be either basestring, Link or Page '
+                'but is "{0}"'.format(type(replace_items[0])))
+        if replace_items[1] is not False and replace_items[1] is not None:
+            if isinstance(replace_items[1], basestring):
+                replace_items[1] = pywikibot.Page(site, replace_items[1])
+            check_replacement_class(replace_items[0])
+            if replace_items[0].site != replace_items[1].site:
+                raise ValueError('Both pages in the "replace" argument '
+                                 'must belong to the same site.')
+        site = replace_items[0].site
+        replace = sequence_replace
+    elif site is None:
+        raise ValueError('If "replace" is not a tuple or list of pages, '
+                         'the "site" argument must be provided.')
+
+    linktrail = site.linktrail()
+    link_pattern = re.compile(
+        r'\[\[(?P<title>.*?)(#(?P<section>.*?))?(\|(?P<label>.*?))?\]\]'
+        r'(?P<linktrail>%s)' % linktrail)
+    extended_label_pattern = re.compile(r'(.*?\]\])({0})'.format(linktrail))
+    linktrail = re.compile(linktrail)
+    curpos = 0
+    # This loop will run until we have finished the current page
+    while True:
+        m = link_pattern.search(text, pos=curpos)
+        if not m:
+            break
+        # ignore links to sections of the same page
+        if not m.group('title').strip():
+            curpos = m.end()
+            continue
+        groups = m.groupdict()
+        if groups['label'] and '[[' in groups['label']:
+            # TODO: Work on the link within the label too
+            # A link within a link, extend the label to the ]] after it
+            extended_match = extended_label_pattern.search(text, pos=m.end())
+            if not extended_match:
+                # TODO: Unclosed link label, what happens there?
+                curpos = m.end()
+                continue
+            groups['label'] += groups['linktrail'] + extended_match.group(1)
+            groups['linktrail'] = extended_match.group(2)
+            end = extended_match.end()
+        else:
+            end = m.end()
+        rng = (m.start(), end)
+        # Since this point the m variable shouldn't be used as it may not
+        # contain all contents
+        del m
+        try:
+            link = pywikibot.Link.create_separated(
+                groups['title'], site, section=groups['section'],
+                label=groups['label'])
+        except pywikibot.SiteDefinitionError:
+            # unrecognized iw prefix
+            curpos = rng[1]
+            continue
+        # ignore interwiki links
+        if link.site != site:
+            curpos = rng[1]
+            continue
+
+        # Check whether the link found should be replaced.
+        # Either None, False or tuple(Link, bool)
+        replacement = replace(link, text, groups.copy(), rng)
+        if replacement is None:
+            curpos = rng[1]
+            continue
+
+        # The link looks like this:
+        # [[page_title|link_text]]trailing_chars
+        page_title = groups['title']
+        link_text = groups['label']
+
+        if not link_text:
+            # or like this: [[page_title]]trailing_chars
+            link_text = page_title
+            # remove preleading ":" from the link text
+            if link_text[0] == ':':
+                link_text = link_text[1:]
+        trailing_chars = groups['linktrail']
+        if trailing_chars:
+            link_text += trailing_chars
+
+        if replacement is False:
+            # unlink - we remove the section if there's any
+            assert isinstance(link_text, unicode), 'link text must be unicode.'
+            replacement = link_text
+        if isinstance(replacement, unicode):
+            # Nothing good can come out of the fact that bytes is returned so
+            # force unicode
+            text = text[:rng[0]] + replacement + text[rng[1]:]
+            # Make sure that next time around we will not find this same hit.
+            curpos = rng[0] + len(replacement)
+            continue
+        elif isinstance(replacement, bytes):
+            raise ValueError('The result must be unicode (str in Python 3) and '
+                             'not bytes (str in Python 2).')
+
+        # Verify that it's either Link, Page or basestring
+        check_replacement_class(replacement)
+        # Use section and label if it's a Link and not otherwise
+        if isinstance(replacement, pywikibot.Link):
+            is_link = True
+        else:
+            replacement = replacement._link
+            is_link = False
+
+        new_page_title = replacement.canonical_title()
+
+        if is_link:
+            # Use link's label
+            link_text = replacement.anchor
+            must_piped = link_text is not None
+            section = replacement.section
+        else:
+            must_piped = True
+            section = groups['section']
+
+        if section:
+            new_page_title += '#' + section
+        if link_text is None:
+            link_text = new_page_title
+
+        # Parse the link text and check if it points to the same page
+        parsed_link_text = pywikibot.Link(link_text, replacement.site)
+        try:
+            parsed_link_text.parse()
+        except InvalidTitle:
+            pass
+        else:
+            parsed_link_title = title_section(parsed_link_text)
+            replacement_title = title_section(replacement)
+            # compare title, but only with parts if linktrail works
+            if not linktrail.sub('', parsed_link_title[len(replacement_title):]):
+                # TODO: This must also compare everything that was used as a
+                #       prefix (in case insensitive)
+                must_piped = (not parsed_link_title.startswith(replacement_title) or
+                              parsed_link_text.namespace != replacement.namespace)
+
+        if must_piped:
+            newlink = '[[{0}|{1}]]'.format(new_page_title, link_text)
+        else:
+            newlink = '[[{0}]]{1}'.format(link_text[:len(new_page_title)],
+                                          link_text[len(new_page_title):])
+        text = text[:rng[0]] + newlink + text[rng[1]:]
+        # Make sure that next time around we will not find this same hit.
+        curpos = rng[0] + len(newlink)
+    return text
 
 
 # -----------------------------------------------
@@ -438,7 +800,8 @@ def getLanguageLinks(text, insite=None, pageLink="[[]]",
     """
     Return a dict of inter-language links found in text.
 
-    The returned dict uses language codes as keys and Page objects as values.
+    The returned dict uses the site as keys and Page objects as values. It does
+    not contain its own site.
 
     Do not call this routine directly, use Page.interwiki() method
     instead.
@@ -480,8 +843,15 @@ def getLanguageLinks(text, insite=None, pageLink="[[]]",
                 pagetitle = pagetitle[:pagetitle.index('|')]
             # we want the actual page objects rather than the titles
             site = pywikibot.Site(code=lang, fam=fam)
+            # skip language links to its own site
+            if site == insite:
+                continue
             try:
-                result[site] = pywikibot.Page(site, pagetitle, insite=insite)
+                previous_key_count = len(result)
+                result[site] = pywikibot.Page(site, pagetitle)
+                if previous_key_count == len(result):
+                    pywikibot.warning('[getLanguageLinks] 2 or more interwiki '
+                                      'links point to site %s.' % site)
             except pywikibot.InvalidTitle:
                 pywikibot.output(u'[getLanguageLinks] Text contains invalid '
                                  u'interwiki link [[%s:%s]].'
@@ -501,12 +871,12 @@ def removeLanguageLinks(text, site=None, marker=''):
     """
     if site is None:
         site = pywikibot.Site()
-    if not site.validLanguageLinks():
-        return text
     # This regular expression will find every interwiki link, plus trailing
     # whitespace.
     languages = '|'.join(site.validLanguageLinks() +
                          list(site.family.obsolete.keys()))
+    if not languages:
+        return text
     interwikiR = re.compile(r'\[\[(%s)\s?:[^\[\]\n]*\]\][\s]*'
                             % languages, re.IGNORECASE)
     text = replaceExcept(text, interwikiR, '',
@@ -551,6 +921,9 @@ def replaceLanguageLinks(oldtext, new, site=None, addOnly=False,
     cseparator = site.family.category_text_separator
     separatorstripped = separator.strip()
     cseparatorstripped = cseparator.strip()
+    do_not_strip = oldtext.strip() != oldtext
+    if do_not_strip:
+        issue_deprecation_warning('Using unstripped text', 'stripped text', 2)
     if addOnly:
         s2 = oldtext
     else:
@@ -558,10 +931,10 @@ def replaceLanguageLinks(oldtext, new, site=None, addOnly=False,
                                              separator=separatorstripped)
     s = interwikiFormat(new, insite=site)
     if s:
-        if site.language() in site.family.interwiki_attop or \
+        if site.code in site.family.interwiki_attop or \
            u'<!-- interwiki at top -->' in oldtext:
             # do not add separator if interwiki links are on one line
-            newtext = s + (u'' if site.language()
+            newtext = s + (u'' if site.code
                            in site.family.interwiki_on_one_line
                            else separator) + s2.replace(marker, '').strip()
         else:
@@ -578,7 +951,7 @@ def replaceLanguageLinks(oldtext, new, site=None, addOnly=False,
                 newtext = (s2[:firstafter].replace(marker, '') +
                            s +
                            s2[firstafter:])
-            elif site.language() in site.family.categories_last:
+            elif site.code in site.family.categories_last:
                 cats = getCategoryLinks(s2, site=site)
                 s2 = removeCategoryLinksAndSeparator(
                     s2.replace(marker, cseparatorstripped).strip(), site) + \
@@ -604,9 +977,9 @@ def replaceLanguageLinks(oldtext, new, site=None, addOnly=False,
                     # Do we have a noinclude at the end of the template?
                     parts = s2.split(includeOff)
                     lastpart = parts[-1]
-                    if re.match('\s*%s' % marker, lastpart):
+                    if re.match(r'\s*%s' % marker, lastpart):
                         # Put the langlinks back into the noinclude's
-                        regexp = re.compile('%s\s*%s' % (includeOff, marker))
+                        regexp = re.compile(r'%s\s*%s' % (includeOff, marker))
                         newtext = regexp.sub(s + includeOff, s2)
                     else:
                         # Put the langlinks at the end, inside noinclude's
@@ -618,17 +991,21 @@ def replaceLanguageLinks(oldtext, new, site=None, addOnly=False,
                     newtext = s2.replace(marker, '').strip() + separator + s
     else:
         newtext = s2.replace(marker, '')
-    return newtext
+    return newtext if do_not_strip else newtext.strip()
 
 
 def interwikiFormat(links, insite=None):
     """Convert interwiki link dict into a wikitext string.
 
-    'links' should be a dict with the Site objects as keys, and Page
-    or Link objects as values.
-
-    Return a unicode string that is formatted for inclusion in insite
-    (defaulting to the current site).
+    @param links: interwiki links to be formatted
+    @type links: dict with the Site objects as keys, and Page
+        or Link objects as values.
+    @param insite: site the interwiki links will be formatted for
+        (defaulting to the current site).
+    @type insite: BaseSite
+    @return: string including wiki links formatted for inclusion
+        in insite
+    @rtype: unicode
     """
     if insite is None:
         insite = pywikibot.Site()
@@ -638,14 +1015,16 @@ def interwikiFormat(links, insite=None):
     ar = interwikiSort(list(links.keys()), insite)
     s = []
     for site in ar:
-        try:
+        if isinstance(links[site], pywikibot.Link):
+            links[site] = pywikibot.Page(links[site])
+        if isinstance(links[site], pywikibot.Page):
             title = links[site].title(asLink=True, forceInterwiki=True,
                                       insite=insite)
             link = title.replace('[[:', '[[')
             s.append(link)
-        except AttributeError:
-            s.append(pywikibot.Site(code=site).linkto(links[site], othersite=insite))
-    if insite.lang in insite.family.interwiki_on_one_line:
+        else:
+            raise ValueError('links dict must contain Page or Link objects')
+    if insite.code in insite.family.interwiki_on_one_line:
         sep = u' '
     else:
         sep = config.line_separator
@@ -665,16 +1044,14 @@ def interwikiSort(sites, insite=None):
     if putfirst:
         # In this case I might have to change the order
         firstsites = []
+        validlanglinks = insite.validLanguageLinks()
         for code in putfirst:
-            if code in insite.validLanguageLinks():
+            if code in validlanglinks:
                 site = insite.getSite(code=code)
                 if site in sites:
                     del sites[sites.index(site)]
                     firstsites = firstsites + [site]
         sites = firstsites + sites
-    if insite.interwiki_putfirst_doubled(sites):
-        # some (all?) implementations return False
-        sites = insite.interwiki_putfirst_doubled(sites) + sites
     return sites
 
 
@@ -682,7 +1059,7 @@ def interwikiSort(sites, insite=None):
 # Functions dealing with category links
 # -------------------------------------
 
-def getCategoryLinks(text, site=None, include=[]):
+def getCategoryLinks(text, site=None, include=[], expand_text=False):
     """Return a list of category links found in text.
 
     @param include: list of tags which should not be removed by
@@ -698,11 +1075,11 @@ def getCategoryLinks(text, site=None, include=[]):
     # Ignore category links within nowiki tags, pre tags, includeonly tags,
     # and HTML comments
     text = removeDisabledParts(text, include=include)
-    catNamespace = '|'.join(site.category_namespaces())
+    catNamespace = '|'.join(site.namespaces.CATEGORY)
     R = re.compile(r'\[\[\s*(?P<namespace>%s)\s*:\s*(?P<rest>.+?)\]\]'
                    % catNamespace, re.I)
     for match in R.finditer(text):
-        if '{{' in match.group('rest'):
+        if expand_text and '{{' in match.group('rest'):
             rest = site.expand_text(match.group('rest'))
         else:
             rest = match.group('rest')
@@ -730,15 +1107,15 @@ def removeCategoryLinks(text, site=None, marker=''):
     # ASCII letters and hyphens.
     if site is None:
         site = pywikibot.Site()
-    catNamespace = '|'.join(site.category_namespaces())
+    catNamespace = '|'.join(site.namespaces.CATEGORY)
     categoryR = re.compile(r'\[\[\s*(%s)\s*:.*?\]\]\s*' % catNamespace, re.I)
     text = replaceExcept(text, categoryR, '',
-                         ['nowiki', 'comment', 'math', 'pre', 'source'],
+                         ['nowiki', 'comment', 'math', 'pre', 'source', 'includeonly'],
                          marker=marker,
                          site=site)
     if marker:
         # avoid having multiple linefeeds at the end of the text
-        text = re.sub('\s*%s' % re.escape(marker), config.LS + marker,
+        text = re.sub(r'\s*%s' % re.escape(marker), config.LS + marker,
                       text.strip())
     return text.strip()
 
@@ -775,14 +1152,14 @@ def replaceCategoryInPlace(oldtext, oldcat, newcat, site=None):
     if site is None:
         site = pywikibot.Site()
 
-    catNamespace = '|'.join(site.category_namespaces())
+    catNamespace = '|'.join(site.namespaces.CATEGORY)
     title = oldcat.title(withNamespace=False)
     if not title:
         return
     # title might contain regex special characters
     title = re.escape(title)
     # title might not be capitalized correctly on the wiki
-    if title[0].isalpha() and not site.nocapitalize:
+    if title[0].isalpha() and site.namespaces[14].case == 'first-letter':
         title = "[%s%s]" % (title[0].upper(), title[0].lower()) + title[1:]
     # spaces and underscores in page titles are interchangeable and collapsible
     title = title.replace(r"\ ", "[ _]+").replace(r"\_", "[ _]+")
@@ -796,14 +1173,17 @@ def replaceCategoryInPlace(oldtext, oldcat, newcat, site=None):
         # an entire line, if the category is the only thing on that line (this
         # prevents blank lines left over in category lists following a removal.)
         text = replaceExcept(oldtext, categoryRN, '',
-                             ['nowiki', 'comment', 'math', 'pre', 'source'])
+                             ['nowiki', 'comment', 'math', 'pre', 'source'],
+                             site=site)
         text = replaceExcept(text, categoryR, '',
-                             ['nowiki', 'comment', 'math', 'pre', 'source'])
+                             ['nowiki', 'comment', 'math', 'pre', 'source'],
+                             site=site)
     else:
         text = replaceExcept(oldtext, categoryR,
                              '[[%s:%s\\2' % (site.namespace(14),
                                              newcat.title(withNamespace=False)),
-                             ['nowiki', 'comment', 'math', 'pre', 'source'])
+                             ['nowiki', 'comment', 'math', 'pre', 'source'],
+                             site=site)
     return text
 
 
@@ -821,13 +1201,12 @@ def replaceCategoryLinks(oldtext, new, site=None, addOnly=False):
     marker = findmarker(oldtext)
     if site is None:
         site = pywikibot.Site()
-    if site.sitename() == 'wikipedia:de' and "{{Personendaten" in oldtext:
-        raise pywikibot.Error("""\
-The Pywikibot is no longer allowed to touch categories on the German
-Wikipedia on pages that contain the Personendaten template because of the
-non-standard placement of that template.
-See https://de.wikipedia.org/wiki/Hilfe_Diskussion:Personendaten/Archiv/1#Position_der_Personendaten_am_.22Artikelende.22
-""")
+    if site.sitename == 'wikipedia:de' and '{{Personendaten' in oldtext:
+        raise pywikibot.Error(
+            'The Pywikibot is no longer allowed to touch categories on the '
+            'German\nWikipedia on pages that contain the Personendaten '
+            'template because of the\nnon-standard placement of that template.\n'
+            'See https://de.wikipedia.org/wiki/Hilfe:Personendaten#Kopiervorlage')
     separator = site.family.category_text_separator
     iseparator = site.family.interwiki_text_separator
     separatorstripped = separator.strip()
@@ -839,7 +1218,7 @@ See https://de.wikipedia.org/wiki/Hilfe_Diskussion:Personendaten/Archiv/1#Positi
                                              separator=separatorstripped)
     s = categoryFormat(new, insite=site)
     if s:
-        if site.language() in site.family.category_attop:
+        if site.code in site.family.category_attop:
             newtext = s + separator + s2
         else:
             # calculate what was after the categories links on the page
@@ -856,7 +1235,7 @@ See https://de.wikipedia.org/wiki/Hilfe_Diskussion:Personendaten/Archiv/1#Positi
                 newtext = (s2[:firstafter].replace(marker, '') +
                            s +
                            s2[firstafter:])
-            elif site.language() in site.family.categories_last:
+            elif site.code in site.family.categories_last:
                 newtext = s2.replace(marker, '').strip() + separator + s
             else:
                 interwiki = getLanguageLinks(s2, insite=site)
@@ -924,12 +1303,12 @@ def compileLinkR(withoutBracketed=False, onlyBracketed=False):
     # Note: While allowing dots inside URLs, MediaWiki will regard
     # dots at the end of the URL as not part of that URL.
     # The same applies to comma, colon and some other characters.
-    notAtEnd = '\]\s\.:;,<>"\|\)'
+    notAtEnd = r'\]\s\.:;,<>"\|\)'
     # So characters inside the URL can be anything except whitespace,
     # closing squared brackets, quotation marks, greater than and less
     # than, and the last character also can't be parenthesis or another
     # character disallowed by MediaWiki.
-    notInside = '\]\s<>"'
+    notInside = r'\]\s<>"'
     # The first half of this regular expression is required because '' is
     # not allowed inside links. For example, in this wiki text:
     #       ''Please see https://www.example.org.''
@@ -950,7 +1329,7 @@ def compileLinkR(withoutBracketed=False, onlyBracketed=False):
 # Functions dealing with templates
 # --------------------------------
 
-def extract_templates_and_params(text):
+def extract_templates_and_params(text, remove_disabled_parts=None, strip=None):
     """Return a list of templates found in text.
 
     Return value is a list of tuples. There is one tuple for each use of a
@@ -973,25 +1352,45 @@ def extract_templates_and_params(text):
     mwpfh preserves whitespace in parameter names and values.  regex excludes
     anything between <!-- --> before parsing the text.
 
+    If there are multiple numbered parameters in the wikitext for the same
+    position, MediaWiki will only use the last parameter value.
+    e.g. {{a| foo | 2 <!-- --> = bar | baz }} is {{a|1=foo|2=baz}}
+    To replicate that behaviour, enable both remove_disabled_parts and strip.
+
     @param text: The wikitext from which templates are extracted
     @type text: unicode or string
+    @param remove_disabled_parts: Remove disabled wikitext such as comments
+        and pre.  If None (default), this is enabled when mwparserfromhell
+        is not available or is disabled in the config, and disabled if
+        mwparserfromhell is present and enabled in the config.
+    @type remove_disabled_parts: bool or None
+    @param strip: if enabled, strip arguments and values of templates.
+        If None (default), this is enabled when mwparserfromhell
+        is not available or is disabled in the config, and disabled if
+        mwparserfromhell is present and enabled in the config.
+    @type strip: bool
     @return: list of template name and params
     @rtype: list of tuple
     """
-    use_mwparserfromhell = config.use_mwparserfromhell
-    if use_mwparserfromhell:
-        try:
-            import mwparserfromhell  # noqa
-        except ImportError:
-            use_mwparserfromhell = False
+    use_mwparserfromhell = (config.use_mwparserfromhell and
+                            not isinstance(mwparserfromhell, Exception))
+
+    if remove_disabled_parts is None:
+        remove_disabled_parts = not use_mwparserfromhell
+
+    if strip is None:
+        strip = not use_mwparserfromhell
+
+    if remove_disabled_parts:
+        text = removeDisabledParts(text)
 
     if use_mwparserfromhell:
-        return extract_templates_and_params_mwpfh(text)
+        return extract_templates_and_params_mwpfh(text, strip)
     else:
-        return extract_templates_and_params_regex(text)
+        return extract_templates_and_params_regex(text, False, strip)
 
 
-def extract_templates_and_params_mwpfh(text):
+def extract_templates_and_params_mwpfh(text, strip=False):
     """
     Extract templates with params using mwparserfromhell.
 
@@ -1007,20 +1406,33 @@ def extract_templates_and_params_mwpfh(text):
     @return: list of template name and params
     @rtype: list of tuple
     """
-    import mwparserfromhell
     code = mwparserfromhell.parse(text)
     result = []
+
     for template in code.filter_templates(recursive=True):
         params = OrderedDict()
         for param in template.params:
-            params[unicode(param.name)] = unicode(param.value)
+            if strip:
+                implicit_parameter = not param.showkey
+                key = param.name.strip()
+                if not implicit_parameter:
+                    value = param.value.strip()
+                else:
+                    value = UnicodeType(param.value)
+            else:
+                key = UnicodeType(param.name)
+                value = UnicodeType(param.value)
+
+            params[key] = value
+
         result.append((unicode(template.name.strip()), params))
     return result
 
 
-def extract_templates_and_params_regex(text):
+def extract_templates_and_params_regex(text, remove_disabled_parts=True,
+                                       strip=True):
     """
-    Extract templates with params using a regex.
+    Extract templates with params using a regex with additional processing.
 
     This function should not be called directly.
 
@@ -1034,7 +1446,10 @@ def extract_templates_and_params_regex(text):
     @rtype: list of tuple
     """
     # remove commented-out stuff etc.
-    thistxt = removeDisabledParts(text)
+    if remove_disabled_parts:
+        thistxt = removeDisabledParts(text)
+    else:
+        thistxt = text
 
     # marker for inside templates or parameters
     marker1 = findmarker(thistxt)
@@ -1080,8 +1495,8 @@ def extract_templates_and_params_regex(text):
     inside = {}
     seen = set()
     count = 0
-    while TEMP_REGEX.search(thistxt) is not None:
-        for m in TEMP_REGEX.finditer(thistxt):
+    while _ETP_REGEX.search(thistxt) is not None:
+        for m in _ETP_REGEX.finditer(thistxt):
             # Make sure it is not detected again
             item = m.group()
             if item in seen:
@@ -1159,10 +1574,12 @@ def extract_templates_and_params_regex(text):
                 for param in markedParams:
                     if "=" in param:
                         param_name, param_val = param.split("=", 1)
+                        implicit_parameter = False
                     else:
                         param_name = unicode(numbered_param)
                         param_val = param
                         numbered_param += 1
+                        implicit_parameter = True
                     count = len(inside)
                     for m2 in Rmarker1.finditer(param_val):
                         param_val = param_val.replace(m2.group(),
@@ -1176,10 +1593,60 @@ def extract_templates_and_params_regex(text):
                     for m2 in Rmarker4.finditer(param_val):
                         param_val = param_val.replace(m2.group(),
                                                       values[int(m2.group(1))])
-                    params[param_name.strip()] = param_val.strip()
+                    if strip:
+                        param_name = param_name.strip()
+                        if not implicit_parameter:
+                            param_val = param_val.strip()
+                    params[param_name] = param_val
+
+            # Special case for {{a|}} which has an undetected parameter
+            if not params and '|' in m.group(0):
+                params = OrderedDict({'1': ''})
 
             # Add it to the result
             result.append((name, params))
+
+    return result
+
+
+def extract_templates_and_params_regex_simple(text):
+    """
+    Extract top-level templates with params using only a simple regex.
+
+    This function uses only a single regex, and returns
+    an entry for each template called at the top-level of the wikitext.
+    Nested templates are included in the argument values of the top-level
+    template.
+
+    This method will incorrectly split arguments when an
+    argument value contains a '|', such as {{template|a={{b|c}} }}.
+
+    @param text: The wikitext from which templates are extracted
+    @type text: unicode or string
+    @return: list of template name and params
+    @rtype: list of tuple of name and OrderedDict
+    """
+    result = []
+
+    for match in NESTED_TEMPLATE_REGEX.finditer(text):
+        name, params = match.group(1), match.group(2)
+
+        # Special case for {{a}}
+        if params is None:
+            params = []
+        else:
+            params = params.split('|')
+
+        numbered_param_identifiers = iter(range(1, len(params) + 1))
+
+        params = OrderedDict(
+            arg.split('=', 1)
+            if '=' in arg
+            else (str(next(numbered_param_identifiers)), arg)
+            for arg in params)
+
+        result.append((name, params))
+
     return result
 
 
@@ -1220,11 +1687,26 @@ def does_text_contain_section(pagetext, section):
 
     """
     # match preceding colon for text links
-    section = re.sub(r'\\\[\\\[(\\:)?', '\[\[\:?', re.escape(section))
+    section = re.sub(r'\\\[\\\[(\\:)?', r'\[\[\:?', re.escape(section))
     # match underscores and white spaces
     section = re.sub(r'\\?[ _]', '[ _]', section)
     m = re.search("=+[ ']*%s[ ']*=+" % section, pagetext)
     return bool(m)
+
+
+def reformat_ISBNs(text, match_func):
+    """Reformat ISBNs.
+
+    @param text: text containing ISBNs
+    @type text: str
+    @param match_func: function to reformat matched ISBNs
+    @type match_func: callable
+    @return: reformatted text
+    @rtype: str
+    """
+    isbnR = re.compile(r'(?<=ISBN )(?P<code>[\d\-]+[\dXx])')
+    text = isbnR.sub(match_func, text)
+    return text
 
 
 # ---------------------------------------
@@ -1268,7 +1750,7 @@ class tzoneFixedOffset(datetime.tzinfo):
 
 class TimeStripper(object):
 
-    """Find timestamp in page and return it as timezone aware datetime object."""
+    """Find timestamp in page and return it as pywikibot.Timestamp object."""
 
     def __init__(self, site=None):
         """Constructor."""
@@ -1327,12 +1809,15 @@ class TimeStripper(object):
         ]
 
         self.linkP = compileLinkR()
+        self.comment_pattern = re.compile(r'<!--(.*?)-->')
 
+        self.tzinfo = tzoneFixedOffset(self.site.siteinfo['timeoffset'],
+                                       self.site.siteinfo['timezone'])
+
+    @deprecated('module function')
     def findmarker(self, text, base=u'@@', delta='@'):
         """Find a string which is not part of text."""
-        while base in text:
-            base += delta
-        return base
+        return findmarker(text, base, delta)
 
     def fix_digits(self, line):
         """Make non-latin digits like Persian to latin to parse."""
@@ -1353,8 +1838,8 @@ class TimeStripper(object):
             cnt += 1
 
         if m:
-            marker = self.findmarker(txt)
-            # month and day format might be identical (e.g. see bug 69315),
+            marker = findmarker(txt)
+            # month and day format might be identical (e.g. see bug T71315),
             # avoid to wipe out day, after month is matched.
             # replace all matches but the last two
             # (i.e. allow to search for dd. mm.)
@@ -1376,9 +1861,22 @@ class TimeStripper(object):
 
         All the following items must be matched, otherwise None is returned:
         -. year, month, hour, time, day, minute, tzinfo
+        @return: A timestamp found on the given line
+        @rtype: pywikibot.Timestamp
         """
         # match date fields
         dateDict = dict()
+        # Analyze comments separately from rest of each line to avoid to skip
+        # dates in comments, as the date matched by timestripper is the
+        # rightmost one.
+        most_recent = []
+        for comment in self.comment_pattern.finditer(line):
+            # Recursion levels can be maximum two. If a comment is found, it will
+            # not for sure be found in the next level.
+            # Nested cmments are excluded by design.
+            timestamp = self.timestripper(comment.group(1))
+            most_recent.append(timestamp)
+
         # Remove parts that are not supposed to contain the timestamp, in order
         # to reduce false positives.
         line = removeDisabledParts(line)
@@ -1414,12 +1912,17 @@ class TimeStripper(object):
                                      % (v, k))
 
             # find timezone
-            dateDict['tzinfo'] = tzoneFixedOffset(self.site.siteinfo['timeoffset'],
-                                                  self.site.siteinfo['timezone'])
+            dateDict['tzinfo'] = self.tzinfo
 
-            timestamp = datetime.datetime(**dateDict)
-
+            timestamp = pywikibot.Timestamp(**dateDict)
         else:
+            timestamp = None
+
+        most_recent.append(timestamp)
+
+        try:
+            timestamp = max(ts for ts in most_recent if ts is not None)
+        except ValueError:
             timestamp = None
 
         return timestamp

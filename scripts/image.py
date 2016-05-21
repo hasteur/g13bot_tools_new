@@ -1,8 +1,11 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 This script can be used to change one image to another or remove an image.
 
-Syntax: python image.py image_name [new_image_name]
+Syntax:
+
+    python pwb.py image image_name [new_image_name]
 
 If only one command-line parameter is provided then that image will be removed;
 if two are provided, then the first image will be replaced by the second one on
@@ -26,27 +29,32 @@ Examples:
 The image "FlagrantCopyvio.jpg" is about to be deleted, so let's first remove it
 from everything that displays it:
 
-    python image.py FlagrantCopyvio.jpg
+    python pwb.py image FlagrantCopyvio.jpg
 
 The image "Flag.svg" has been uploaded, making the old "Flag.jpg" obsolete:
 
-    python image.py Flag.jpg Flag.svg
+    python pwb.py image Flag.jpg Flag.svg
 
 """
 #
-# (C) Pywikibot team, 2013-2014
+# (C) Pywikibot team, 2013-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
-import pywikibot
-import replace
-from pywikibot import i18n, pagegenerators, Bot
 import re
 
+import pywikibot
 
-class ImageRobot(Bot):
+from pywikibot import i18n, pagegenerators, Bot
+
+from scripts.replace import ReplaceRobot as ReplaceBot
+
+
+class ImageRobot(ReplaceBot):
 
     """This bot will replace or remove all occurrences of an old image."""
 
@@ -110,34 +118,21 @@ class ImageRobot(Bot):
             'summary': None,
             'loose': False,
         })
-        super(ImageRobot, self).__init__(**kwargs)
 
-        self.generator = generator
-        self.site = pywikibot.Site()
+        Bot.__init__(self, generator=generator, **kwargs)
+
         self.old_image = old_image
         self.new_image = new_image
 
         if not self.getOption('summary'):
-            if self.new_image:
-                self.options['summary'] = i18n.translate(self.site, self.msg_replace,
-                                                         fallback=True) \
-                % (self.old_image, self.new_image)
-            else:
-                self.options['summary'] = i18n.translate(self.site, self.msg_remove,
-                                                         fallback=True) \
-                % self.old_image
+            self.options['summary'] = i18n.translate(
+                self.site, self.msg_replace,
+                (self.old_image, self.new_image) if self.new_image
+                else self.old_image,
+                fallback=True)
 
-    def run(self):
-        """Start the bot's action."""
-        # regular expression to find the original template.
-        # {{vfd}} does the same thing as {{Vfd}}, so both will be found.
-        # The old syntax, {{msg:vfd}}, will also be found.
-        # The group 'parameters' will either match the parameters, or an
-        # empty string if there are none.
-
-        replacements = []
-
-        if not self.site.nocapitalize:
+        namespace = self.site.namespaces[6]
+        if namespace.case == 'first-letter':
             case = re.escape(self.old_image[0].upper() +
                              self.old_image[0].lower())
             escaped = '[' + case + ']' + re.escape(self.old_image[1:])
@@ -147,22 +142,27 @@ class ImageRobot(Bot):
         # Be careful, spaces and _ have been converted to '\ ' and '\_'
         escaped = re.sub('\\\\[_ ]', '[_ ]', escaped)
         if not self.getOption('loose') or not self.new_image:
-            image_regex = re.compile(r'\[\[ *(?:' + '|'.join(self.site.namespace(6, all=True)) + ')\s*:\s*' + escaped + ' *(?P<parameters>\|[^\n]+|) *\]\]')
+            image_regex = re.compile(
+                r'\[\[ *(?:%s)\s*:\s*%s *(?P<parameters>\|[^\n]+|) *\]\]'
+                % ('|'.join(namespace), escaped))
         else:
             image_regex = re.compile(r'' + escaped)
 
+        replacements = []
         if self.new_image:
             if not self.getOption('loose'):
-                replacements.append((image_regex, '[[' + self.site.image_namespace() + ':' + self.new_image + '\g<parameters>]]'))
+                replacements.append((image_regex,
+                                     u'[[%s:%s\\g<parameters>]]'
+                                     % (self.site.namespaces.FILE.custom_name,
+                                        self.new_image)))
             else:
                 replacements.append((image_regex, self.new_image))
         else:
             replacements.append((image_regex, ''))
 
-        replaceBot = replace.ReplaceRobot(self.generator, replacements,
-                                          acceptall=self.getOption('always'),
-                                          summary=self.getOption('summary'))
-        replaceBot.run()
+        super(ImageRobot, self).__init__(self.generator, replacements,
+                                         always=self.getOption('always'),
+                                         summary=self.getOption('summary'))
 
 
 def main(*args):
@@ -200,8 +200,10 @@ def main(*args):
         preloadingGen = pagegenerators.PreloadingGenerator(gen)
         bot = ImageRobot(preloadingGen, old_image, new_image, **options)
         bot.run()
+        return True
     else:
-        pywikibot.showHelp()
+        pywikibot.bot.suggest_help(missing_parameters=['old image'])
+        return False
 
 if __name__ == "__main__":
     main()

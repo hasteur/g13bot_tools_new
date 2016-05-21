@@ -1,15 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""
+r"""
 Template harvesting script.
 
 Usage:
 
-python harvest_template.py -transcludes:"..." template_parameter PID [template_parameter PID]
-
-   or
-
-python harvest_template.py [generators] -template:"..." template_parameter PID [template_parameter PID]
+* python pwb.py harvest_template -transcludes:"..." \
+    template_parameter PID [template_parameter PID]
+* python pwb.py harvest_template [generators] -template:"..." \
+    template_parameter PID [template_parameter PID]
 
 This will work on all pages that transclude the template in the article
 namespace
@@ -20,7 +19,8 @@ These command line parameters can be used to specify which pages to work on:
 
 Examples:
 
-python harvest_template.py -lang:nl -cat:Sisoridae -template:"Taxobox straalvinnige" -namespace:0 orde P70 familie P71 geslacht P74
+    python pwb.py harvest_template -lang:nl -cat:Sisoridae -namespace:0 \
+        -template:"Taxobox straalvinnige" orde P70 familie P71 geslacht P74
 
 """
 #
@@ -29,10 +29,28 @@ python harvest_template.py -lang:nl -cat:Sisoridae -template:"Taxobox straalvinn
 #
 # Distributed under the terms of MIT License.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import re
+import signal
+
+willstop = False
+
+
+def _signal_handler(signal, frame):
+    global willstop
+    if not willstop:
+        willstop = True
+        print('Received ctrl-c. Finishing current item; '
+              'press ctrl-c again to abort.')  # noqa
+    else:
+        raise KeyboardInterrupt
+
+signal.signal(signal.SIGINT, _signal_handler)
+
 import pywikibot
 from pywikibot import pagegenerators as pg, textlib, WikidataBot
 
@@ -68,12 +86,13 @@ class HarvestRobot(WikidataBot):
             pywikibot.error(u'Template %s does not exist.' % temp.title())
             exit()
 
-        pywikibot.output('Finding redirects...')  # Put some output here since it can take a while
+        # Put some output here since it can take a while
+        pywikibot.output('Finding redirects...')
         if temp.isRedirectPage():
             temp = temp.getRedirectTarget()
         titles = [page.title(withNamespace=False)
-                  for page
-                  in temp.getReferences(redirectsOnly=True, namespaces=[10], follow_redirects=False)]
+                  for page in temp.getReferences(redirectsOnly=True, namespaces=[10],
+                                                 follow_redirects=False)]
         titles.append(temp.title(withNamespace=False))
         return titles
 
@@ -84,7 +103,8 @@ class HarvestRobot(WikidataBot):
         linked_page = pywikibot.Page(link)
 
         if not linked_page.exists():
-            pywikibot.output(u'%s doesn\'t exist so it can\'t be linked. Skipping' % (linked_page))
+            pywikibot.output('%s does not exist so it cannot be linked. '
+                             'Skipping.' % (linked_page))
             return
 
         if linked_page.isRedirectPage():
@@ -96,21 +116,25 @@ class HarvestRobot(WikidataBot):
             linked_item = None
 
         if not linked_item or not linked_item.exists():
-            pywikibot.output(u'%s doesn\'t have a wikidata item to link with. Skipping' % (linked_page))
+            pywikibot.output('%s does not have a wikidata item to link with. '
+                             'Skipping.' % (linked_page))
             return
 
         if linked_item.title() == item.title():
-            pywikibot.output(u'%s links to itself. Skipping' % (linked_page))
+            pywikibot.output('%s links to itself. Skipping.' % (linked_page))
             return
 
         return linked_item
 
     def treat(self, page, item):
         """Process a single page/item."""
+        if willstop:
+            raise KeyboardInterrupt
         self.current_page = page
         item.get()
         if set(self.fields.values()) <= set(item.claims.keys()):
-            pywikibot.output(u'%s item %s has claims for all properties. Skipping' % (page, item.title()))
+            pywikibot.output('%s item %s has claims for all properties. '
+                             'Skipping.' % (page, item.title()))
             return
 
         pagetext = page.get()
@@ -121,7 +145,9 @@ class HarvestRobot(WikidataBot):
                 template = pywikibot.Page(page.site, template,
                                           ns=10).title(withNamespace=False)
             except pywikibot.exceptions.InvalidTitle:
-                pywikibot.error(u"Failed parsing template; '%s' should be the template name." % template)
+                pywikibot.error(
+                    "Failed parsing template; '%s' should be the template name."
+                    % template)
                 continue
             # We found the template we were looking for
             if template in self.templateTitles:
@@ -137,7 +163,7 @@ class HarvestRobot(WikidataBot):
                         claim = pywikibot.Claim(self.repo, self.fields[field])
                         if claim.getID() in item.get().get('claims'):
                             pywikibot.output(
-                                u'A claim for %s already exists. Skipping'
+                                'A claim for %s already exists. Skipping.'
                                 % claim.getID())
                             # TODO: Implement smarter approach to merging
                             # harvested values with existing claims esp.
@@ -147,7 +173,10 @@ class HarvestRobot(WikidataBot):
                                 # Try to extract a valid page
                                 match = re.search(pywikibot.link_regex, value)
                                 if not match:
-                                    pywikibot.output(u'%s field %s value %s isnt a wikilink. Skipping' % (claim.getID(), field, value))
+                                    pywikibot.output(
+                                        '%s field %s value %s is not a '
+                                        'wikilink. Skipping.'
+                                        % (claim.getID(), field, value))
                                     continue
 
                                 link_text = match.group(1)
@@ -156,23 +185,29 @@ class HarvestRobot(WikidataBot):
                                     continue
 
                                 claim.setTarget(linked_item)
-                            elif claim.type == 'string':
+                            elif claim.type in ('string', 'external-id'):
                                 claim.setTarget(value.strip())
                             elif claim.type == 'commonsMedia':
                                 commonssite = pywikibot.Site("commons", "commons")
-                                imagelink = pywikibot.Link(value, source=commonssite, defaultNamespace=6)
+                                imagelink = pywikibot.Link(value, source=commonssite,
+                                                           defaultNamespace=6)
                                 image = pywikibot.FilePage(imagelink)
                                 if image.isRedirectPage():
                                     image = pywikibot.FilePage(image.getRedirectTarget())
                                 if not image.exists():
-                                    pywikibot.output('[[%s]] doesn\'t exist so I can\'t link to it' % (image.title(),))
+                                    pywikibot.output(
+                                        '[[%s]] doesn\'t exist so I can\'t link to it'
+                                        % (image.title(),))
                                     continue
                                 claim.setTarget(image)
                             else:
-                                pywikibot.output("%s is not a supported datatype." % claim.type)
+                                pywikibot.output(
+                                    '%s is not a supported datatype.'
+                                    % claim.type)
                                 continue
 
-                            pywikibot.output('Adding %s --> %s' % (claim.getID(), claim.getTarget()))
+                            pywikibot.output('Adding %s --> %s'
+                                             % (claim.getID(), claim.getTarget()))
                             item.addClaim(claim)
                             # A generator might yield pages from multiple sites
                             source = self.getSource(page.site)

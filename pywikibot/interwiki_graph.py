@@ -1,21 +1,30 @@
-""" Module with the Graphviz drawing calls. """
+# -*- coding: utf-8  -*-
+"""Module with the Graphviz drawing calls."""
 #
-# (C) Pywikibot team, 2006-2010
+# (C) Pywikibot team, 2006-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
+import itertools
 import threading
 
-pydotfound = True
 try:
     import pydot
-except ImportError:
-    pydotfound = False
+except ImportError as e:
+    pydot = e
+
 import pywikibot
+
 from pywikibot import config2 as config
+from pywikibot.tools import Counter
+
+# deprecated value
+pydotfound = not isinstance(pydot, ImportError)
 
 
 class GraphImpossible(Exception):
@@ -37,40 +46,130 @@ class GraphSavingThread(threading.Thread):
     """
 
     def __init__(self, graph, originPage):
+        """Constructor."""
         threading.Thread.__init__(self)
         self.graph = graph
         self.originPage = originPage
 
     def run(self):
+        """Write graphs to the data directory."""
         for format in config.interwiki_graph_formats:
-            filename = 'interwiki-graphs/' + getFilename(self.originPage,
-                                                         format)
+            filename = config.datafilepath(
+                'interwiki-graphs/' + getFilename(self.originPage, format))
             if self.graph.write(filename, prog='dot', format=format):
                 pywikibot.output(u'Graph saved as %s' % filename)
             else:
                 pywikibot.output(u'Graph could not be saved as %s' % filename)
 
 
-class GraphDrawer:
+class Subject(object):
+
+    """Data about a page with translations on multiple wikis."""
+
+    def __init__(self, origin=None):
+        """Constructor.
+
+        @param originPage: the page on the 'origin' wiki
+        @type originPage: Page
+        """
+        # Remember the "origin page"
+        self._origin = origin
+
+        # Temporary variable to support git blame; do not use
+        originPage = origin
+
+        self.found_in = None
+
+        # foundIn is a dictionary where pages are keys and lists of
+        # pages are values. It stores where we found each page.
+        # As we haven't yet found a page that links to the origin page, we
+        # start with an empty list for it.
+        if originPage:
+            self.foundIn = {self.originPage: []}
+        else:
+            self.foundIn = {}
+
+    @property
+    def origin(self):
+        """Page on the origin wiki."""
+        return self._origin
+
+    @origin.setter
+    def origin(self, value):
+        """Page on the origin wiki."""
+        self._origin = value
+
+    @property
+    def originPage(self):
+        """Deprecated property for the origin page.
+
+        DEPRECATED.  Use origin.
+        """
+        # TODO: deprecate this property
+        return self.origin
+
+    @originPage.setter
+    def originPage(self, value):
+        """Deprecated property for the origin page.
+
+        DEPRECATED.  Use origin.
+        """
+        self.origin = value
+
+    @property
+    def foundIn(self):
+        """Mapping of pages to others pages interwiki linked to it.
+
+        DEPRECATED.  Use found_in.
+        """
+        # TODO: deprecate this property
+        return self.found_in
+
+    @foundIn.setter
+    def foundIn(self, value):
+        """Temporary property setter to support code migration."""
+        self.found_in = value
+
+
+class GraphDrawer(object):
 
     """Graphviz (dot) code creator."""
 
     def __init__(self, subject):
-        """Constructor."""
-        if not pydotfound:
-            raise GraphImpossible('pydot is not installed.')
+        """Constructor.
+
+        @param subject: page data to graph
+        @type subject: Subject
+
+        @raises GraphImpossible: pydot is not installed
+        """
+        if isinstance(pydot, ImportError):
+            raise GraphImpossible('pydot is not installed: %s.' % pydot)
         self.graph = None
         self.subject = subject
 
     def getLabel(self, page):
-        return (u'"\"%s:%s\""' % (page.site.language(),
-                                  page.title())).encode('utf-8')
+        """Get label for page."""
+        return '"%s:%s"' % (page.site.code, page.title())
+
+    def _octagon_site_set(self):
+        """Build a list of sites with more than one valid page."""
+        page_list = self.subject.found_in.keys()
+
+        # Only track sites of normal pages
+        each_site = [page.site for page in page_list
+                     if page.exists() and not page.isRedirectPage()]
+
+        return set(x[0] for x in itertools.takewhile(
+            lambda x: x[1] > 1,
+            Counter(each_site).most_common()))
 
     def addNode(self, page):
+        """Add a node for page."""
         node = pydot.Node(self.getLabel(page), shape='rectangle')
         node.set_URL("\"http://%s%s\""
                      % (page.site.hostname(),
-                        page.site.get_address(page.urlname())))
+                        page.site.get_address(page.title(asUrl=True))))
         node.set_style('filled')
         node.set_fillcolor('white')
         node.set_fontsize('11')
@@ -83,16 +182,13 @@ class GraphDrawer:
         if page.namespace() != self.subject.originPage.namespace():
             node.set_color('green')
             node.set_style('filled,bold')
-        # if we found more than one valid page for this language:
-        # TODO: Only iterate through at most 2 elements
-        if len([p for p in self.subject.foundIn.keys()
-                if p.site == page.site and p.exists() and
-                not p.isRedirectPage()]) > 1:          # noqa
+        if page.site in self.octagon_sites:
             # mark conflict by octagonal node
             node.set_shape('octagon')
         self.graph.add_node(node)
 
     def addDirectedEdge(self, page, refPage):
+        """Add a directed edge from refPage to page."""
         # if page was given as a hint, referrers would be [None]
         if refPage is not None:
             sourceLabel = self.getLabel(refPage)
@@ -105,8 +201,9 @@ class GraphDrawer:
                     # bugfix for pydot >= 1.0.3
                     oppositeEdge = oppositeEdge[0]
                 oppositeEdge.set_dir('both')
-            # workaround for bug [ 1722739 ]: prevent duplicate edges
+            # workaround for sf.net bug 401: prevent duplicate edges
             # (it is unclear why duplicate edges occur)
+            # https://sourceforge.net/p/pywikipediabot/bugs/401/
             elif self.graph.get_edge(sourceLabel, targetLabel):
                 pywikibot.output(
                     u'BUG: Tried to create duplicate edge from %s to %s'
@@ -130,6 +227,7 @@ class GraphDrawer:
                 self.graph.add_edge(edge)
 
     def saveGraphFile(self):
+        """Write graphs to the data directory."""
         thread = GraphSavingThread(self.graph, self.subject.originPage)
         thread.start()
 
@@ -144,6 +242,9 @@ class GraphDrawer:
         # create empty graph
         self.graph = pydot.Dot()
         # self.graph.set('concentrate', 'true')
+
+        self.octagon_sites = self._octagon_site_set()
+
         for page in self.subject.foundIn.keys():
             # a node for each found page
             self.addNode(page)
@@ -169,8 +270,8 @@ def getFilename(page, extension=None):
     @rtype: str
     """
     filename = '%s-%s-%s' % (page.site.family.name,
-                             page.site.language(),
-                             page.titleForFilename())
+                             page.site.code,
+                             page.title(as_filename=True))
     if extension:
         filename += '.%s' % extension
     return filename

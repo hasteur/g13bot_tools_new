@@ -26,24 +26,32 @@ Furthermore, the following command line parameters are supported:
 -summary          Prompt for a custom summary, bypassing the predefined message
                   texts. Argument can also be given as "-summary:XYZ".
 
--pairs            Read pairs of file names from a file. The file must be in a
+-pairsfile        Read pairs of file names from a file. The file must be in a
                   format [[frompage]] [[topage]] [[frompage]] [[topage]] ...
-                  Argument can also be given as "-pairs:filename"
+                  Argument can also be given as "-pairsfile:filename"
 
 """
 #
 # (C) Leonardo Gregianin, 2006
 # (C) Andreas J. Schwab, 2007
-# (C) Pywikibot team, 2006-2014
+# (C) Pywikibot team, 2006-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import re
+
 import pywikibot
-from pywikibot import i18n, pagegenerators, Bot
+
+from pywikibot.exceptions import ArgumentDeprecationWarning
+from pywikibot.tools import issue_deprecation_warning
+from pywikibot import i18n, pagegenerators
+
+from pywikibot.bot import MultipleSitesBot
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
@@ -52,11 +60,12 @@ docuReplacements = {
 }
 
 
-class MovePagesBot(Bot):
+class MovePagesBot(MultipleSitesBot):
 
     """Page move bot."""
 
     def __init__(self, generator, **kwargs):
+        """Constructor."""
         self.availableOptions.update({
             'prefix': None,
             'noredirect': False,
@@ -72,6 +81,7 @@ class MovePagesBot(Bot):
         self.noNamespace = False
 
     def moveOne(self, page, newPageTitle):
+        """Move on page to newPageTitle."""
         try:
             msg = self.getOption('summary')
             if not msg:
@@ -85,6 +95,7 @@ class MovePagesBot(Bot):
             pywikibot.output(error)
 
     def treat(self, page):
+        """Treat a single page."""
         self.current_page = page
         if self.getOption('skipredirects') and page.isRedirectPage():
             pywikibot.output(u'Page %s is a redirect; skipping.' % page.title())
@@ -103,20 +114,8 @@ class MovePagesBot(Bot):
         if self.getOption('prefix'):
             newPageTitle = (u'%s%s' % (self.getOption('prefix'), pagetitle))
         if self.getOption('prefix') or self.appendAll or self.regexAll:
-            if not self.getOption('always'):
-                choice2 = pywikibot.input_choice(
-                    u'Change the page title to "%s"?' % newPageTitle,
-                    [('yes', 'y'), ('no', 'n'), ('all', 'a')])
-                if choice2 == 'y':
-                    self.moveOne(page, newPageTitle)
-                elif choice2 == 'a':
-                    self.options['always'] = True
-                    self.moveOne(page, newPageTitle)
-                elif choice2 == 'n':
-                    pass
-                else:
-                    self.treat(page)
-            else:
+            if self.user_confirm('Change the page title to "%s"?'
+                                 % newPageTitle):
                 self.moveOne(page, newPageTitle)
         else:
             choice = pywikibot.input_choice(u'What do you want to do?',
@@ -147,10 +146,6 @@ class MovePagesBot(Bot):
                 elif choice2 == 'a':
                     self.appendAll = True
                     self.moveOne(page, newPageTitle)
-                elif choice2 == 'n':
-                    pass
-                else:
-                    self.treat(page)
             elif choice == 'r':
                 searchPattern = pywikibot.input(u'Enter the search pattern:')
                 self.replacePattern = pywikibot.input(
@@ -177,14 +172,6 @@ class MovePagesBot(Bot):
                 elif choice2 == 'a':
                     self.regexAll = True
                     self.moveOne(page, newPageTitle)
-                elif choice2 == 'n':
-                    pass
-                else:
-                    self.treat(page)
-            elif choice == 'n':
-                pass
-            else:
-                self.treat(page)
 
 
 def main(*args):
@@ -207,11 +194,16 @@ def main(*args):
 
     for arg in local_args:
         if arg.startswith('-pairs'):
-            if len(arg) == len('-pairs'):
+            issue_deprecation_warning(
+                '-pairs',
+                '-pairsfile',
+                2, ArgumentDeprecationWarning)
+        elif arg.startswith('-pairsfile'):
+            if len(arg) == len('-pairsfile'):
                 filename = pywikibot.input(
                     u'Enter the name of the file containing pairs:')
             else:
-                filename = arg[len('-pairs:'):]
+                filename = arg[len('-pairsfile:'):]
             oldName1 = None
             for page in pagegenerators.TextfilePageGenerator(filename):
                 if oldName1:
@@ -267,8 +259,13 @@ def main(*args):
         preloadingGen = pagegenerators.PreloadingGenerator(gen)
         bot = MovePagesBot(preloadingGen, **options)
         bot.run()
-    elif not fromToPairs:
-        pywikibot.showHelp()
+        return True
+
+    if not fromToPairs:
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
+    else:
+        return True
 
 if __name__ == '__main__':
     main()

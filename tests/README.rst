@@ -2,13 +2,13 @@
 Pywikibot tests
 ===============
 
-The Pywikibot tests are based on the unittest framework
-<https://docs.python.org/2/library/unittest.html>,
-and are compatible with nose.<https://nose.readthedocs.org/>
+The Pywikibot tests are based on the `unittest framework
+<https://docs.python.org/2/library/unittest.html>`_,
+and are compatible with `nose <https://nose.readthedocs.org/>`_.
 
 The tests package provides a function load_tests that supports the
-'load tests protocol'.
-<https://docs.python.org/2/library/unittest.html#load-tests-protocol>.
+`load tests protocol
+<https://docs.python.org/2/library/unittest.html#load-tests-protocol>`_.
 The default ordering begins with tests of underlying components, then tests
 site and page semantics, and finishes with tests of the scripts and finally
 any tests which have not been inserted into the ordered list of tests.
@@ -21,7 +21,7 @@ Running tests
 All tests
 ---------
 
-The entire suite of tests may be run in three ways from the root directory:
+The entire suite of tests may be run in the following ways from the root directory:
 
 setup.py
 ~~~~~~~~
@@ -29,6 +29,15 @@ setup.py
 ::
 
     python setup.py test
+
+::
+
+    python setup.py nosetests --tests tests
+
+::
+
+    pip install pytest-runner
+    python setup.py pytest
 
 Module unittest
 ~~~~~~~~~~~~~~~
@@ -44,6 +53,20 @@ nose
 
     nosetests -v
 
+pytest
+~~~~~~
+
+::
+
+    py.test
+
+tox
+~~~
+
+::
+
+    tox
+
 Specific tests
 --------------
 
@@ -54,24 +77,43 @@ unittest
 
 ::
 
-    python -m unittest -v tests.site_tests
+    python -m unittest -v tests.api_tests tests.site_tests
+    python -m unittest -v tests.api_tests.TestParamInfo.test_init
 
 nose
 ~~~~
 
 ::
 
-    nosetests -v tests.site_tests
+    nosetests -v tests.api_tests tests.site_tests
+    python -m unittest -v tests.api_tests:TestParamInfo.test_init
+
+pytest
+~~~~~~
+
+::
+
+    py.test -s -v tests/api_tests.py tests/site_tests.py
+    py.test -s -v tests/api_tests.py::TestParamInfo::test_init
 
 pwb
 ~~~
 
 ::
 
+    python pwb.py tests/api_tests.py -v
     python pwb.py tests/site_tests.py -v
+    python pwb.py tests/api_tests.py -v TestParamInfo.test_init
+
+env
+~~~
+
+::
+
+    PYWIKIBOT_TEST_MODULES=api,site python setup.py test
 
 
-travis-ci
+Travis CI
 =========
 
 After changes are published into a github repository, tests may be run on
@@ -83,7 +125,7 @@ published at travis-ci.org/wikimedia/pywikibot-core/builds .  These tests
 use the Wikimedia global (SUL) account 'Pywikibot-test', which has a password
 securely stored in .travis.yml . See section env:global:secure.
 
-Anyone can run these tests on travis-ci.org using their own account, with
+Anyone can run these tests on travis-ci.org using their own github account, with
 code changes that have not been merged into the main repository.  To do this:
 
 1. create a github and travis-ci account
@@ -103,8 +145,86 @@ a username and password to travis:
 2. Add a new variable named PYWIKIBOT2_USERNAME and a value of a valid
    Wikimedia SUL username
 3. Add another variable named USER_PASSWORD, with the private password for
-   the Wikimedia SUL username used in step 2
+   the Wikimedia SUL username used in step 2.  Check that this
+   environment variable has "Display value in build logs" set to OFF, so
+   the password does not leak into the build logs.
 4. The next build should run tests that require a logged in user
+
+If the username does not exist on one of the Travis build sites, user tests
+will not be run on that build site.
+
+While passwords in travis-ci environment variables are not leaked in normal
+operations, you are responsible for your own passwords. If the variables contain
+single quotes it is necessary to surround them in double quotes (see also
+`travis-ci #4350 <https://github.com/travis-ci/travis-ci/issues/4350>`_).
+
+It is strongly recommended that an untrusted bot account is created for
+travis tests, using a password that is not shared with trusted accounts.
+
+Appveyor CI
+===========
+
+After changes are published into a github repository, tests may be run on
+a Microsoft Windows box provided by ci.appveyor.com according to the
+configuration in .appveyor.yml .  To do this:
+
+1. create a github and appveyor account
+2. fork the main github repository
+3. create a project in ci.appveyor.com
+4. go to https://ci.appveyor.com/project/<username>/pywikibot-core/settings
+   and enter the custom configuration .yml filename: .appveyor.yml
+5. push changes into the forked git repository
+6. watch the build at https://ci.appveyor.com/<username>/pywikibot-core/history
+
+The 'user' tests are not yet enabled on appveyor builds.
+
+CircleCI
+========
+
+After changes are published into a github repository, tests may be run on
+CircleCI Ubuntu servers.
+
+1. create a github and circleci account
+2. fork the main github repository
+3. create a project in circleci.com
+4. go to https://circleci.com/gh/<username>/pywikibot-core/edit#env-vars
+   and add the following variables:
+     PYWIKIBOT2_NO_USER_CONFIG=2
+     TOXENV=py27,py34
+5. push changes into the forked git repository
+6. watch the build at https://circleci.com/gh/<username>/pywikibot-core
+
+PYWIKIBOT2_NO_USER_CONFIG=2 is needed because 'python setup.py test' is run.
+
+TOXENV=py27,py34 is a workaround because CircleCI runs 'tox',
+but there is a bug in the CircleCI default 'py26' implementation.
+
+This approach does not include 'user' tests.
+
+Environment variables
+=====================
+
+There are a set of 'edit failure' tests, which attempt to write to the wikis
+and **should** fail.  If there is a bug in pywikibot or MediaWiki, these
+tests **may** actually perform a write operation.
+
+These 'edit failure' tests are disabled by default. On Travis they are enabled
+by default on builds by any other github account except 'wikimedia'.
+
+To disable 'edit failure' tests, set PYWIKIBOT2_TEST_WRITE_FAIL=0
+
+There are also several other 'write' tests which also attempt to perform
+write operations successfully.  These **will** write to the wikis, and they
+should always only write to 'test' wikis.
+
+These 'write' tests are disabled by default, and currently can not be
+run on travis or appveyor as they require interaction using a terminal. Also
+enabling them won't enable 'edit failure' tests.
+
+To enable 'write' tests, set PYWIKIBOT2_TEST_WRITE=1
+
+Enabling only 'edit failure' tests or 'write' tests won't enable the other tests
+automatically.
 
 Contributing tests
 ==================
@@ -168,9 +288,9 @@ the class attribute 'sites' may include a hostname.
 Other class attributes
 ----------------------
 
-- 'net = False' : test class does not use a site
-- 'dry = True' : test class can use a fake site object
-- 'user = True' : test class needs to login to site
-- 'sysop = True' : test class needs to login to site as a sysop
-- 'write = True' : test class needs to write to a site
+- ``net = False`` : test class does not use a site
+- ``dry = True`` : test class can use a fake site object
+- ``user = True`` : test class needs to login to site
+- ``sysop = True`` : test class needs to login to site as a sysop
+- ``write = True`` : test class needs to write to a site
 

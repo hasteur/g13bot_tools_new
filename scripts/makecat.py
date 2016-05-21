@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: UTF-8 -*-
 """
 This bot takes as its argument the name of a new or existing category.
@@ -31,26 +32,24 @@ C(heck) - check links to and from the page, but do not add the page itself
 R(emove) - remove a page that is already in the list
 L(ist) - show current list of pages to include or to check
 """
-
 # (C) Andre Engels, 2004
 # (C) Pywikibot team, 2005-2014
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-import sys
 import codecs
+import sys
+
 import pywikibot
-from pywikibot import date, pagegenerators, i18n, textlib
+
+from pywikibot import pagegenerators, i18n, textlib
+
 from pywikibot.tools import DequeGenerator
-
-
-def isdate(s):
-    """Return true if s is a date or year."""
-    dict, val = date.getAutoFormat(pywikibot.Site().language(), s)
-    return dict is not None
 
 
 def needcheck(pl):
@@ -60,7 +59,7 @@ def needcheck(pl):
     if pl in checked:
         return False
     if skipdates:
-        if isdate(pl.title()):
+        if pl.autoFormat()[0] is not None:
             return False
     return True
 
@@ -192,7 +191,7 @@ try:
     main = True
     workingcatname = ''
     tocheck = DequeGenerator()
-    for arg in pywikibot.handleArgs():
+    for arg in pywikibot.handle_args():
         if arg.startswith('-nodate'):
             skipdates = True
         elif arg.startswith('-forward'):
@@ -208,17 +207,17 @@ try:
             workingcatname = arg
 
     if not workingcatname:
-        pywikibot.showHelp()
+        pywikibot.bot.suggest_help(missing_parameters=['working category'])
         sys.exit(0)
 
     mysite = pywikibot.Site()
     pywikibot.setAction(i18n.twtranslate(mysite, 'makecat-create', {'cat': workingcatname}))
     workingcat = pywikibot.Category(mysite,
                                     u'%s:%s'
-                                    % (mysite.category_namespace(),
+                                    % (mysite.namespaces.CATEGORY,
                                        workingcatname))
-    filename = pywikibot.config.datafilepath('category',
-                                             workingcatname.encode('ascii', 'xmlcharrefreplace') + '_exclude.txt')
+    filename = pywikibot.config.datafilepath(
+        'category', workingcatname.encode('ascii', 'xmlcharrefreplace') + '_exclude.txt')
     try:
         f = codecs.open(filename, 'r', encoding=mysite.encoding())
         for line in f.readlines():

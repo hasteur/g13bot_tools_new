@@ -1,22 +1,22 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-A script that adds claims to Wikidata items based on categories.
+A script that adds claims to Wikidata items based on a list of pages.
 
 ------------------------------------------------------------------------------
 
 Usage:
 
-python claimit.py [pagegenerators] P1 Q2 P123 Q456
+    python pwb.py claimit [pagegenerators] P1 Q2 P123 Q456
 
-You can use any typical pagegenerator to provide with a list of pages.
-Then list the property-->target pairs to add.
+You can use any typical pagegenerator (like categories) to provide with a
+list of pages. Then list the property-->target pairs to add.
 
 ------------------------------------------------------------------------------
 
 For geographic coordinates:
 
-python claimit.py [pagegenerators] P625 [lat-dec],[long-dec],[prec]
+    python pwb.py claimit [pagegenerators] P625 [lat-dec],[long-dec],[prec]
 
 [lat-dec] and [long-dec] represent the latitude and longitude respectively,
 and [prec] represents the precision. All values are in decimal degrees,
@@ -24,14 +24,14 @@ not DMS. If [prec] is omitted, the default precision is 0.0001 degrees.
 
 Example:
 
-python claimit.py [pagegenerators] P625 -23.3991,-52.0910,0.0001
+    python pwb.py claimit [pagegenerators] P625 -23.3991,-52.0910,0.0001
 
 ------------------------------------------------------------------------------
 
 By default, claimit.py does not add a claim if one with the same property
 already exists on the page. To override this behavior, use the 'exists' option:
 
-python claimit.py [pagegenerators] P246 "string example" -exists:p
+    python pwb.py claimit [pagegenerators] P246 "string example" -exists:p
 
 Suppose the claim you want to add has the same property as an existing claim
 and the "-exists:p" argument is used. Now, claimit.py will not add the claim
@@ -42,7 +42,7 @@ to the 'exists' argument.
 For instance, to add the claim to each page even if one with the same
 property, target, and qualifiers already exists:
 
-python claimit.py [pagegenerators] P246 "string example" -exists:ptq
+    python pwb.py claimit [pagegenerators] P246 "string example" -exists:ptq
 
 Note that the ordering of the letters in the 'exists' argument does not matter,
 but 'p' must be included.
@@ -54,6 +54,8 @@ but 'p' must be included.
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
@@ -81,7 +83,7 @@ class ClaimRobot(WikidataBot):
             * exists_arg   - String specifying how to handle duplicate claims
 
         """
-        super(ClaimRobot, self).__init__()
+        super(ClaimRobot, self).__init__(use_from_page=None)
         self.generator = generator
         self.claims = claims
         self.exists_arg = exists_arg
@@ -99,26 +101,44 @@ class ClaimRobot(WikidataBot):
                 # If claim with same property already exists...
                 if claim.getID() in item.claims:
                     if self.exists_arg is None or 'p' not in self.exists_arg:
-                        pywikibot.log('Skipping %s because claim with same property already exists' % (claim.getID(),))
-                        pywikibot.log('Use the -exists:p option to override this behavior')
+                        pywikibot.log(
+                            'Skipping %s because claim with same property '
+                            'already exists' % (claim.getID(),))
+                        pywikibot.log(
+                            'Use -exists:p option to override this behavior')
                         skip = True
                     else:
-                        existing_claims = item.claims[claim.getID()]  # Existing claims on page of same property
+                        # Existing claims on page of same property
+                        existing_claims = item.claims[claim.getID()]
                         for existing in existing_claims:
                             skip = True  # Default value
-                            # If some attribute of the claim being added matches some attribute in an existing claim
-                            # of the same property, skip the claim, unless the 'exists' argument overrides it.
-                            if claim.getTarget() == existing.getTarget() and 't' not in self.exists_arg:
-                                pywikibot.log('Skipping %s because claim with same target already exists' % (claim.getID(),))
-                                pywikibot.log('Append \'t\' to the -exists argument to override this behavior')
+                            # If some attribute of the claim being added
+                            # matches some attribute in an existing claim of
+                            # the same property, skip the claim, unless the
+                            # 'exists' argument overrides it.
+                            if (claim.getTarget() == existing.getTarget() and
+                                    't' not in self.exists_arg):
+                                pywikibot.log(
+                                    'Skipping %s because claim with same target already exists'
+                                    % (claim.getID(),))
+                                pywikibot.log(
+                                    'Append \'t\' to -exists argument to override this behavior')
                                 break
-                            if listsEqual(claim.getSources(), existing.getSources()) and 's' not in self.exists_arg:
-                                pywikibot.log('Skipping %s because claim with same sources already exists' % (claim.getID(),))
-                                pywikibot.log('Append \'s\' to the -exists argument to override this behavior')
+                            if (listsEqual(claim.getSources(), existing.getSources()) and
+                                    's' not in self.exists_arg):
+                                pywikibot.log(
+                                    'Skipping %s because claim with same sources already exists'
+                                    % (claim.getID(),))
+                                pywikibot.log(
+                                    'Append \'s\' to -exists argument to override this behavior')
                                 break
-                            if listsEqual(claim.qualifiers, existing.qualifiers) and 'q' not in self.exists_arg:
-                                pywikibot.log('Skipping %s because claim with same qualifiers already exists' % (claim.getID(),))
-                                pywikibot.log('Append \'q\' to the -exists argument to override this behavior')
+                            if (listsEqual(claim.qualifiers, existing.qualifiers) and
+                                    'q' not in self.exists_arg):
+                                pywikibot.log(
+                                    'Skipping %s because claim with same '
+                                    'qualifiers already exists' % (claim.getID(),))
+                                pywikibot.log(
+                                    'Append \'q\' to -exists argument to override this behavior')
                                 break
                             skip = False
                 if not skip:
@@ -201,12 +221,12 @@ def main(*args):
 
     generator = gen.getCombinedGenerator()
     if not generator:
-        # show help text from the top of this file
-        pywikibot.showHelp()
-        return
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
     bot = ClaimRobot(generator, claims, exists_arg)
     bot.run()
+    return True
 
 if __name__ == "__main__":
     main()

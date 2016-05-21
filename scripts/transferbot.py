@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8  -*-
-
-"""
+r"""
 This script transfers pages from a source wiki to a target wiki.
 
 It also copies edit history to a subpage.
@@ -23,21 +22,26 @@ Pages to work on can be specified using any of:
 
 Example commands:
 
-# Transfer all pages in category "Query service" from the Toolserver wiki to
-# wikitech, adding Nova_Resource:Tools/Tools/ as prefix
-transferbot.py -v -family:toolserver -tofamily:wikitech -cat:"Query service" -prefix:Nova_Resource:Tools/Tools/
+Transfer all pages in category "Query service" from the English Wikipedia to the
+Arabic Wiktionary, adding "Wiktionary:Import enwp/" as prefix:
 
-# Copy the template "Query service" from the Toolserver wiki to wikitech
-transferbot.py -v -family:toolserver -tofamily:wikitech -page:"Template:Query service"
+    python pwb.py transferbot -family:wikipedia -lang:en -cat:"Query service" \
+        -tofamily:wiktionary -tolang:ar -prefix:"Wiktionary:Import enwp/"
+
+Copy the template "Query service" from the Toolserver wiki to wikitech:
+
+    python pwb.py transferbot -family:wikipedia -lang:en \
+        -tofamily:wiktionary -tolang:ar -page:"Template:Query service"
 
 """
-
 #
 # (C) Merlijn van Deen, 2014
-# (C) Pywikibot team, 2014
+# (C) Pywikibot team, 2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
@@ -129,13 +133,13 @@ def main(*args):
     Pages to transfer: %(gen_args)s
 
     Prefix for transferred pages: %(prefix)s
-    """ % locals())
+    """ % {'fromsite': fromsite, 'tosite': tosite,
+           'gen_args': gen_args, 'prefix': prefix})
 
     for page in gen:
         summary = "Moved page from %s" % page.title(asLink=True)
         targetpage = pywikibot.Page(tosite, prefix + page.title())
-        edithistpage = pywikibot.Page(tosite, prefix + page.title()
-                                      + "/edithistory")
+        edithistpage = pywikibot.Page(tosite, prefix + page.title() + '/edithistory')
 
         if targetpage.exists() and not overwrite:
             pywikibot.output(
@@ -152,18 +156,19 @@ def main(*args):
 
         pywikibot.log("Getting page text.")
         text = page.get(get_redirect=True)
-        text += "<noinclude>\n\n<small>This page was moved from %s. It's edit history can be viewed at %s</small></noinclude>" % (
-                page.title(asLink=True, insite=targetpage.site),
-                edithistpage.title(asLink=True, insite=targetpage.site))
+        text += ("<noinclude>\n\n<small>This page was moved from %s. It's "
+                 "edit history can be viewed at %s</small></noinclude>"
+                 % (page.title(asLink=True, insite=targetpage.site),
+                    edithistpage.title(asLink=True, insite=targetpage.site)))
 
         pywikibot.log("Getting edit history.")
         historytable = page.getVersionHistoryTable()
 
         pywikibot.log("Putting page text.")
-        targetpage.put(text, comment=summary)
+        targetpage.put(text, summary=summary)
 
         pywikibot.log("Putting edit history.")
-        edithistpage.put(historytable, comment=summary)
+        edithistpage.put(historytable, summary=summary)
 
 
 if __name__ == "__main__":

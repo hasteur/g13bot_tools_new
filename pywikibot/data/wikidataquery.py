@@ -4,23 +4,28 @@
 # (C) Pywikibot team, 2013
 #
 # Distributed under the terms of the MIT license.
+from __future__ import absolute_import, unicode_literals
 
+import hashlib
 import json
+import os
+import pickle
 import sys
+import tempfile
+import time
+
 if sys.version_info[0] > 2:
     from urllib.parse import quote
+    basestring = (str, )
 else:
     from urllib2 import quote
-import pickle
-import os
-import hashlib
-import time
-import tempfile
 
 import pywikibot
+
 from pywikibot.comms import http
-from pywikibot.page import ItemPage, PropertyPage, Claim
+
 from pywikibot import config
+from pywikibot.page import ItemPage, PropertyPage, Claim
 
 
 def listify(x):
@@ -32,7 +37,7 @@ def listify(x):
     return x if isinstance(x, list) else [x]
 
 
-class QuerySet():
+class QuerySet(object):
 
     """
     A QuerySet represents a set of queries or other query sets.
@@ -110,10 +115,11 @@ class QuerySet():
         return s
 
     def __repr__(self):
+        """Return a string representation."""
         return u"QuerySet(%s)" % self
 
 
-class Query():
+class Query(object):
 
     """
     A query is a single query for the WikidataQuery API.
@@ -199,6 +205,7 @@ class Query():
         return True
 
     def validateOrRaise(self, msg=None):
+        """Validate the contents and raise TypeError if the validation fails."""
         if not self.validate():
             raise TypeError(msg)
 
@@ -219,6 +226,7 @@ class Query():
             return int(item)
 
     def convertWDTypes(self, items):
+        """Convert the items into integer IDs using L{Query.convertWDType}."""
         return [self.convertWDType(x) for x in listify(items)]
 
     def __str__(self):
@@ -227,11 +235,12 @@ class Query():
 
         Sub-classes must override this method.
 
-        @raise NotImplementedError: Always raised by this abstract method
+        @raises NotImplementedError: Always raised by this abstract method
         """
         raise NotImplementedError
 
     def __repr__(self):
+        """Return a string representation."""
         return u"Query(%s)" % self
 
 
@@ -250,7 +259,7 @@ class HasClaim(Query):
         """Constructor."""
         self.prop = self.convertWDType(prop)
 
-        if isinstance(items, Tree):
+        if isinstance(items, Query):
             self.items = items
         elif isinstance(self, StringClaim):
             self.items = listify(items)
@@ -260,6 +269,7 @@ class HasClaim(Query):
         self.validateOrRaise()
 
     def formatItems(self):
+        """Format the items when they are a list."""
         res = ''
         if self.items:
             res += ":" + ",".join([self.formatItem(x) for x in self.items])
@@ -267,12 +277,14 @@ class HasClaim(Query):
         return res
 
     def validate(self):
-        return self.isOrContainsOnlyTypes(self.items, [int, Tree])
+        """Validate that the items are ints or Querys."""
+        return self.isOrContainsOnlyTypes(self.items, [int, Query])
 
     def __str__(self):
+        """Return the query string for the API."""
         if isinstance(self.items, list):
             return "%s[%s%s]" % (self.queryType, self.prop, self.formatItems())
-        elif isinstance(self.items, Tree):  # maybe Query?
+        elif isinstance(self.items, Query):
             return "%s[%s:(%s)]" % (self.queryType, self.prop, self.items)
 
 
@@ -294,7 +306,8 @@ class StringClaim(HasClaim):
         return '"%s"' % x
 
     def validate(self):
-        return self.isOrContainsOnlyTypes(self.items, str)
+        """Validate that the items are strings."""
+        return self.isOrContainsOnlyTypes(self.items, basestring)
 
 
 class Tree(Query):
@@ -316,8 +329,8 @@ class Tree(Query):
         if not self.isOrContainsOnlyTypes(item, [int, ItemPage]):
             raise TypeError("The item paramter must contain or be integer IDs "
                             "or page.ItemPages")
-        elif (not self.isOrContainsOnlyTypes(forward, [int, PropertyPage])
-                or not self.isOrContainsOnlyTypes(reverse, [int, PropertyPage])):
+        elif (not self.isOrContainsOnlyTypes(forward, [int, PropertyPage]) or
+                not self.isOrContainsOnlyTypes(reverse, [int, PropertyPage])):
             raise TypeError("The forward and reverse parameters must contain "
                             "or be integer IDs or page.PropertyPages")
 
@@ -328,14 +341,16 @@ class Tree(Query):
         self.validateOrRaise()
 
     def validate(self):
+        """Validate that the item, forward and reverse are all ints."""
         return (self.isOrContainsOnlyTypes(self.item, int) and
-                        self.isOrContainsOnlyTypes(self.forward, int) and
-                        self.isOrContainsOnlyTypes(self.reverse, int))
+                self.isOrContainsOnlyTypes(self.forward, int) and
+                self.isOrContainsOnlyTypes(self.reverse, int))
 
     def __str__(self):
+        """Return the query string for the API."""
         return "%s[%s][%s][%s]" % (self.queryType, self.formatList(self.item),
-                                    self.formatList(self.forward),
-                                    self.formatList(self.reverse))
+                                   self.formatList(self.forward),
+                                   self.formatList(self.reverse))
 
 
 class Around(Query):
@@ -352,9 +367,11 @@ class Around(Query):
         self.rad = rad
 
     def validate(self):
+        """Validate that the prop is an int."""
         return isinstance(self.prop, int)
 
     def __str__(self):
+        """Return the query string for the API."""
         return "%s[%s,%s,%s,%s]" % (self.queryType, self.prop,
                                     self.lt, self.lg, self.rad)
 
@@ -368,7 +385,7 @@ class Between(Query):
     to be in UTC, timezones are not supported by the API
 
     @param prop: the property
-    @param begin: WbTime object representign the beginning of the period
+    @param begin: WbTime object representing the beginning of the period
     @param end: WbTime object representing the end of the period
     """
 
@@ -381,9 +398,11 @@ class Between(Query):
         self.end = end
 
     def validate(self):
+        """Validate that a range is given and the prop is an int."""
         return (self.begin or self.end) and isinstance(self.prop, int)
 
     def __str__(self):
+        """Return the query string for the API."""
         begin = self.begin.toTimestr() if self.begin else ''
 
         # if you don't have an end, you don't put in the comma
@@ -408,9 +427,11 @@ class Link(Query):
         self.validateOrRaise()
 
     def validate(self):
-        return self.isOrContainsOnlyTypes(self.link, str)
+        """Validate that the link is a string."""
+        return self.isOrContainsOnlyTypes(self.link, basestring)
 
     def __str__(self):
+        """Return the query string for the API."""
         return "%s[%s]" % (self.queryType, self.formatList(self.link))
 
 
@@ -433,14 +454,17 @@ def fromClaim(claim):
 
     if claim.type == 'wikibase-item':
         return HasClaim(claim.getID(numeric=True), claim.getTarget().getID(numeric=True))
-    if claim.type == 'string':
+    if claim.type == 'commonsMedia':
+        return StringClaim(claim.getID(numeric=True),
+                           claim.getTarget().title(withNamespace=False))
+    if claim.type in ('string', 'url', 'math', 'external-id'):
         return StringClaim(claim.getID(numeric=True), claim.getTarget())
     else:
         raise TypeError("Cannot construct a query from a claim of type %s"
                         % claim.type)
 
 
-class WikidataQuery():
+class WikidataQuery(object):
 
     """
     An interface to the WikidataQuery API.
@@ -456,7 +480,7 @@ class WikidataQuery():
     """
 
     def __init__(self, host="https://wdq.wmflabs.org", cacheDir=None,
-                    cacheMaxAge=60):
+                 cacheMaxAge=60):
         """Constructor."""
         self.host = host
         self.cacheMaxAge = cacheMaxAge
@@ -465,9 +489,10 @@ class WikidataQuery():
             self.cacheDir = cacheDir
         else:
             self.cacheDir = os.path.join(tempfile.gettempdir(),
-                                            "wikidataquery_cache")
+                                         "wikidataquery_cache")
 
     def getUrl(self, queryStr):
+        """Get the URL given the query string."""
         return "%s/api?%s" % (self.host, queryStr)
 
     def getQueryString(self, q, labels=[], props=[]):
@@ -516,7 +541,7 @@ class WikidataQuery():
                         data = pickle.load(f)
                     except pickle.UnpicklingError:
                         pywikibot.warning(u"Couldn't read cached data from %s"
-                                            % cacheFile)
+                                          % cacheFile)
                         data = None
 
                 return data
@@ -558,16 +583,25 @@ class WikidataQuery():
         url = self.getUrl(queryStr)
 
         try:
-            resp = http.request(None, url)
+            resp = http.fetch(url)
         except:
             pywikibot.warning(u"Failed to retrieve %s" % url)
             raise
 
+        data = resp.content
+        if not data:
+            pywikibot.warning('No data received for %s' % url)
+            raise pywikibot.ServerError('No data received for %s' % url)
+
         try:
-            data = json.loads(resp)
+            data = json.loads(data)
         except ValueError:
-            pywikibot.warning(u"Data received from host but no JSON could be decoded")
-            raise pywikibot.ServerError("Data received from host but no JSON could be decoded")
+            pywikibot.warning(
+                'Data received for %s but no JSON could be decoded: %r'
+                % (url, data))
+            raise pywikibot.ServerError(
+                'Data received for %s but no JSON could be decoded: %r'
+                % (url, data))
 
         return data
 

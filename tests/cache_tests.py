@@ -5,13 +5,16 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 from pywikibot.site import BaseSite
+
 import scripts.maintenance.cache as cache
 
-from tests import _cache_dir
+from tests import join_cache_path
 from tests.aspects import unittest, TestCase
 
 
@@ -22,6 +25,7 @@ class RequestCacheTests(TestCase):
     net = False
 
     def _check_cache_entry(self, entry):
+        """Assert validity of the cache entry."""
         self.assertIsInstance(entry.site, BaseSite)
         self.assertIsInstance(entry.site._loginstatus, int)
         self.assertIsInstance(entry.site._username, list)
@@ -33,7 +37,8 @@ class RequestCacheTests(TestCase):
         # to make it closely replicate the original object.
 
     def test_cache(self):
-        cache.process_entries(_cache_dir, self._check_cache_entry)
+        """Test the apicache by doing _check_cache_entry over each entry."""
+        cache.process_entries(join_cache_path(), self._check_cache_entry)
 
 
 if __name__ == '__main__':

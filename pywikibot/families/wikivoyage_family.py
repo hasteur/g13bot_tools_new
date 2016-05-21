@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Family module for Wikivoyage."""
+from __future__ import absolute_import, unicode_literals
 
 __version__ = '$Id$'
 
@@ -8,24 +9,21 @@ __version__ = '$Id$'
 from pywikibot import family
 
 
-class Family(family.WikimediaFamily):
+class Family(family.SubdomainFamily, family.WikimediaFamily):
 
     """Family class for Wikivoyage."""
 
+    name = 'wikivoyage'
+
     def __init__(self):
         """Constructor."""
-        super(Family, self).__init__()
-        self.name = 'wikivoyage'
         self.languages_by_size = [
-            'en', 'de', 'fr', 'it', 'pt', 'nl', 'pl', 'ru', 'es', 'vi', 'sv',
-            'zh', 'he', 'ro', 'uk', 'el', 'fa'
+            'en', 'de', 'fa', 'it', 'fr', 'ru', 'nl', 'pt', 'pl', 'he', 'es',
+            'vi', 'sv', 'zh', 'ro', 'el', 'uk',
         ]
 
-        self.langs = dict([(lang, '%s.wikivoyage.org' % lang)
-                           for lang in self.languages_by_size])
-        # Global bot allowed languages on https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
-        self.cross_allowed = ['es', 'ru', ]
+        super(Family, self).__init__()
 
-    def shared_data_repository(self, code, transcluded=False):
-        """Return the shared data repository for this site."""
-        return ('wikidata', 'wikidata')
+        # Global bot allowed languages on
+        # https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
+        self.cross_allowed = ['es', 'ru', ]

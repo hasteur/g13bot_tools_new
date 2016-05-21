@@ -1,53 +1,34 @@
 # -*- coding: utf-8  -*-
 """Family module for WOW Wiki."""
+from __future__ import absolute_import, unicode_literals
 
 __version__ = '$Id$'
 
 from pywikibot import family
+from pywikibot.tools import deprecated
 
 
-class Family(family.Family):
+class Family(family.SubdomainFamily, family.WikiaFamily):
 
     """Family class for WOW Wiki."""
 
+    name = 'wowwiki'
+    domain = 'wow.wikia.com'
+
+    languages_by_size = [
+        'cs', 'da', 'de', 'el', 'en', 'es', 'fa', 'fi', 'fr', 'he', 'hu', 'is',
+        'it', 'ja', 'ko', 'lt', 'lv', 'nl', 'no', 'pl', 'pt', 'pt-br', 'ru',
+        'sk', 'sv', 'tr', 'zh', 'zh-tw'
+    ]
+
+    interwiki_removals = ['hr', 'ro', 'sr']
+
     def __init__(self):
         """Constructor."""
-        family.Family.__init__(self)
-        self.name = 'wowwiki'
-
-        self.langs = {
-            'cs': 'cs.wow.wikia.com',
-            'da': 'da.wowwiki.com',
-            'de': 'de.wow.wikia.com',
-            'el': 'el.wow.wikia.com',
-            'en': 'www.wowwiki.com',
-            'es': 'es.wow.wikia.com',
-            'fa': 'fa.wow.wikia.com',
-            'fi': 'fi.wow.wikia.com',
-            'fr': 'fr.wowwiki.com',
-            'he': 'he.wow.wikia.com',
-            'hr': 'hr.wow.wikia.com',
-            'hu': 'hu.wow.wikia.com',
-            'is': 'is.wow.wikia.com',
-            'it': 'it.wow.wikia.com',
-            'ja': 'ja.wow.wikia.com',
-            'ko': 'ko.wow.wikia.com',
-            'lt': 'lt.wow.wikia.com',
-            'lv': 'lv.wow.wikia.com',
-            'nl': 'nl.wow.wikia.com',
-            'no': 'no.wowwiki.com',
-            'pl': 'pl.wow.wikia.com',
-            'pt': 'pt.wow.wikia.com',
-            'pt-br': 'pt-br.wow.wikia.com',
-            'ro': 'ro.wow.wikia.com',
-            'ru': 'ru.wow.wikia.com',
-            'sk': 'sk.wow.wikia.com',
-            'sr': 'sr.wow.wikia.com',
-            'sv': 'sv.warcraft.wikia.com',
-            'tr': 'tr.wow.wikia.com',
-            'zh-tw': 'zh-tw.wow.wikia.com',
-            'zh': 'zh.wow.wikia.com'
-        }
+        super(Family, self).__init__()
+        # Override 'sv'.  http://sv.wow.wikia.com is an empty wiki.
+        # The interwikimap in this family map 'sv' to this empty wiki.
+        self.langs['sv'] = 'sv.warcraft.wikia.com'
 
         self.disambiguationTemplates['en'] = ['disambig', 'disambig/quest',
                                               'disambig/quest2',
@@ -55,12 +36,14 @@ class Family(family.Family):
         self.disambcatname['en'] = "Disambiguations"
 
         # Wikia's default CategorySelect extension always puts categories last
-        self.categories_last = ['cs', 'da', 'de', 'el', 'en', 'es', 'fa', 'fi', 'fr', 'he', 'hr', 'hu', 'is', 'it', 'ja', 'ko', 'lt', 'lv', 'nl', 'no', 'pl', 'pt', 'pt-br', 'ro', 'ru', 'sk', 'sr', 'sv', 'tr', 'zh-tw', 'zh']
+        self.categories_last = self.langs.keys()
 
-    def scriptpath(self, code):
-        """Return the script path for this family."""
-        return ''
+    @property
+    def domains(self):
+        """List of domains used by family wowwiki."""
+        return (self.domain, 'wowwiki.com', 'warcraft.wikia.com')
 
+    @deprecated('APISite.version()')
     def version(self, code):
         """Return the version for this family."""
         return '1.19.20'

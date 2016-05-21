@@ -1,5 +1,6 @@
 # -*- coding: utf-8  -*-
 """Family module for Wiktionary."""
+from __future__ import absolute_import, unicode_literals
 
 from pywikibot import family
 
@@ -7,34 +8,95 @@ __version__ = '$Id$'
 
 
 # The Wikimedia family that is known as Wiktionary
-class Family(family.WikimediaFamily):
+class Family(family.SubdomainFamily, family.WikimediaFamily):
 
     """Family class for Wiktionary."""
 
+    name = 'wiktionary'
+
+    closed_wikis = [
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Afar_Wiktionary
+        'aa',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Abkhaz_Wiktionary
+        'ab',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Akan_Wiktionary
+        'ak',
+        # https://als.wikipedia.org/wiki/Wikipedia:Stammtisch/Archiv_2008-1#Afterwards.2C_closure_and_deletion_of_Wiktionary.2C_Wikibooks_and_Wikiquote_sites
+        'als',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Assamese_Wiktionary
+        'as',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Avar_Wiktionary
+        'av',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bashkir_Wiktionary
+        'ba',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bihari_Wiktionary
+        'bh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bislama_Wiktionary
+        'bi',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bambara_Wiktionary
+        'bm',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tibetan_Wiktionary
+        'bo',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Chamorro_Wiktionary
+        'ch',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nehiyaw_Wiktionary
+        'cr',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Dzongkha_Wiktionary
+        'dz',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Inupiak_Wiktionary
+        'ik',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Marshallese_Wiktionary
+        'mh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Moldovan_Wiktionary
+        'mo',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Pali_Bhasa_Wiktionary
+        'pi',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Rhaetian_Wiktionary
+        'rm',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kirundi_Wiktionary
+        'rn',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Sardinian_Wiktionary
+        'sc',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Shona_Wiktionary
+        'sn',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tongan_Wiktionary
+        'to',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Klingon_Wiktionary
+        'tlh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Twi_Wiktionary
+        'tw',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Xhosa_Wiktionary
+        'xh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Yoruba_Wiktionary
+        'yo',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Zhuang_Wiktionary
+        'za',
+    ]
+
+    removed_wikis = [
+        'tokipona',
+    ]
+
     def __init__(self):
         """Constructor."""
-        super(Family, self).__init__()
-        self.name = 'wiktionary'
-
         self.languages_by_size = [
-            'en', 'mg', 'fr', 'sh', 'zh', 'es', 'lt', 'ru', 'el', 'pl', 'nl',
-            'sv', 'ko', 'it', 'de', 'ku', 'tr', 'ta', 'hu', 'fi', 'kn', 'io',
-            'vi', 'pt', 'chr', 'no', 'ml', 'id', 'my', 'ja', 'li', 'ro', 'et',
-            'te', 'ca', 'jv', 'fa', 'cs', 'ar', 'eu', 'gl', 'lo', 'uk', 'hy',
-            'br', 'fj', 'th', 'eo', 'bg', 'hr', 'ps', 'uz', 'az', 'oc', 'is',
-            'cy', 'vo', 'simple', 'zh-min-nan', 'da', 'scn', 'sr', 'ast', 'af',
-            'he', 'sw', 'or', 'hi', 'fy', 'tl', 'wa', 'nn', 'ur', 'la', 'sq',
-            'pnb', 'ka', 'sm', 'sl', 'nah', 'lv', 'tt', 'lb', 'bs', 'kk', 'nds',
-            'sk', 'tk', 'hsb', 'mk', 'ky', 'be', 'km', 'ms', 'ga', 'wo', 'sa',
-            'ang', 'mn', 'co', 'tg', 'gn', 'mr', 'ug', 'csb', 'st', 'so', 'ia',
-            'sd', 'si', 'vec', 'kl', 'an', 'jbo', 'ln', 'fo', 'bn', 'zu', 'gv',
-            'kw', 'gu', 'rw', 'om', 'na', 'qu', 'ss', 'ie', 'mt', 'pa',
-            'roa-rup', 'iu', 'su', 'am', 'mi', 'ne', 'gd', 'tpi', 'yi',
-            'ti', 'sg', 'tn', 'dv', 'ts', 'ha', 'ks', 'ay',
+            'en', 'mg', 'fr', 'sh', 'es', 'zh', 'ru', 'lt', 'pl', 'sv', 'nl',
+            'de', 'ku', 'el', 'it', 'tr', 'ta', 'ko', 'hu', 'fi', 'io', 'kn',
+            'vi', 'pt', 'chr', 'ca', 'ja', 'no', 'ro', 'ml', 'id', 'th', 'uz',
+            'hy', 'li', 'et', 'my', 'or', 'te', 'cs', 'fa', 'jv', 'ar', 'eu',
+            'gl', 'sr', 'az', 'lo', 'uk', 'br', 'fj', 'hr', 'eo', 'da', 'bg',
+            'oc', 'ps', 'simple', 'cy', 'vo', 'is', 'zh-min-nan', 'scn', 'wa',
+            'ast', 'he', 'af', 'tl', 'sw', 'fy', 'tg', 'hi', 'nn', 'sk', 'pnb',
+            'lv', 'mn', 'la', 'ka', 'sl', 'sq', 'nah', 'lb', 'bs', 'nds', 'kk',
+            'sm', 'tk', 'hsb', 'mk', 'ky', 'bn', 'be', 'ms', 'km', 'ga', 'an',
+            'ur', 'co', 'wo', 'sa', 'ang', 'vec', 'tt', 'gn', 'mr', 'so', 'csb',
+            'ug', 'gd', 'sd', 'st', 'mt', 'roa-rup', 'si', 'ie', 'ia', 'ay',
+            'mi', 'kl', 'pa', 'jbo', 'fo', 'ln', 'zu', 'na', 'gv', 'kw', 'gu',
+            'rw', 'ts', 'om', 'qu', 'ss', 'ha', 'su', 'iu', 'am', 'ne', 'dv',
+            'tpi', 'yi', 'ti', 'sg', 'tn', 'ks',
         ]
 
-        self.langs = dict([(lang, '%s.wiktionary.org' % lang)
-                           for lang in self.languages_by_size])
+        super(Family, self).__init__()
 
         # Global bot allowed languages on
         # https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
@@ -93,44 +155,14 @@ class Family(family.WikimediaFamily):
             'simple': self.alphabetic,
         }
 
-        self.obsolete = {
-            'aa': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Afar_Wiktionary
-            'ab': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Abkhaz_Wiktionary
-            'ak': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Akan_Wiktionary
-            'als': None,  # https://als.wikipedia.org/wiki/Wikipedia:Stammtisch/Archiv_2008-1#Afterwards.2C_closure_and_deletion_of_Wiktionary.2C_Wikibooks_and_Wikiquote_sites
-            'as': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Assamese_Wiktionary
-            'av': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Avar_Wiktionary
-            'ba': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bashkir_Wiktionary
-            'bh': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bihari_Wiktionary
-            'bi': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bislama_Wiktionary
-            'bm': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bambara_Wiktionary
-            'bo': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tibetan_Wiktionary
-            'ch': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Chamorro_Wiktionary
-            'cr': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nehiyaw_Wiktionary
-            'dk': 'da',
-            'dz': None,
-            'ik': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Inupiak_Wiktionary
-            'jp': 'ja',
-            'mh': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Marshallese_Wiktionary
-            'mo': 'ro',  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Moldovan_Wiktionary
-            'minnan': 'zh-min-nan',
-            'nb': 'no',
-            'pi': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Pali_Bhasa_Wiktionary
-            'rm': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Rhaetian_Wiktionary
-            'rn': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kirundi_Wiktionary
-            'sc': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Sardinian_Wiktionary
-            'sn': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Shona_Wiktionary
-            'to': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tongan_Wiktionary
-            'tlh': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Klingon_Wiktionary
-            'tw': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Twi_Wiktionary
-            'tokipona': None,
-            'xh': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Xhosa_Wiktionary
-            'yo': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Yoruba_Wiktionary
-            'za': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Zhuang_Wiktionary
-            'zh-tw': 'zh',
-            'zh-cn': 'zh'
-        }
-
         self.interwiki_on_one_line = ['pl']
 
         self.interwiki_attop = ['pl']
+
+        # Subpages for documentation.
+        # TODO: List is incomplete, to be completed for missing languages.
+        self.doc_subpages = {
+            '_default': ((u'/doc', ),
+                         ['en']
+                         ),
+        }

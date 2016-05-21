@@ -1,5 +1,6 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikipedia."""
+from __future__ import absolute_import, unicode_literals
 
 from pywikibot import family
 
@@ -7,50 +8,83 @@ __version__ = '$Id$'
 
 
 # The Wikimedia family that is known as Wikipedia, the Free Encyclopedia
-class Family(family.WikimediaFamily):
+class Family(family.SubdomainFamily, family.WikimediaFamily):
 
     """Family module for Wikipedia."""
 
+    name = 'wikipedia'
+
+    closed_wikis = [
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Afar_Wikipedia
+        'aa',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Choctaw_Wikipedia
+        'cho',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Hiri_Motu_Wikipedia
+        'ho',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Herero_Wikipedia
+        'hz',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Yi_Wikipedia
+        'ii',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kwanyama_Wikipedia
+        'kj',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kanuri_Wikipedia
+        'kr',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Marshallese_Wikipedia
+        'mh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Moldovan_Wikipedia
+        'mo',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Muscogee_Wikipedia
+        'mus',
+    ]
+
+    removed_wikis = [
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Ndonga_Wikipedia
+        'ng',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Siberian_Wikipedia
+        'ru-sib',
+        # Klingon, locked in 2005, and moved to http://klingon.wikia.com/
+        'tlh',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tokipona_Wikipedia
+        'tokipona',
+    ]
+
     def __init__(self):
         """Constructor."""
-        super(Family, self).__init__()
-        self.name = 'wikipedia'
-
         self.languages_by_size = [
-            'en', 'sv', 'nl', 'de', 'fr', 'ru', 'it', 'es', 'vi', 'war', 'ceb',
-            'pl', 'ja', 'pt', 'zh', 'uk', 'ca', 'no', 'fa', 'fi', 'id', 'ar',
-            'cs', 'ko', 'ms', 'hu', 'ro', 'sr', 'tr', 'min', 'sh', 'kk', 'eo',
-            'sk', 'eu', 'da', 'lt', 'bg', 'he', 'hr', 'sl', 'uz', 'hy', 'et',
-            'vo', 'nn', 'gl', 'simple', 'hi', 'la', 'el', 'az', 'th', 'oc',
-            'ka', 'mk', 'be', 'new', 'tt', 'pms', 'tl', 'ta', 'te', 'cy', 'lv',
-            'be-x-old', 'ht', 'ur', 'ce', 'bs', 'sq', 'br', 'jv', 'mg', 'lb',
-            'mr', 'is', 'ml', 'pnb', 'ba', 'af', 'my', 'zh-yue', 'bn', 'ga',
-            'lmo', 'yo', 'fy', 'an', 'cv', 'tg', 'ky', 'sw', 'ne', 'io', 'gu',
-            'bpy', 'sco', 'scn', 'nds', 'ku', 'ast', 'qu', 'su', 'als', 'gd',
-            'kn', 'am', 'ckb', 'ia', 'nap', 'bug', 'bat-smg', 'wa', 'map-bms',
-            'mn', 'arz', 'pa', 'mzn', 'si', 'zh-min-nan', 'yi', 'sah', 'fo',
-            'vec', 'sa', 'bar', 'nah', 'os', 'roa-tara', 'pam', 'or', 'hsb',
-            'se', 'li', 'mrj', 'mi', 'ilo', 'co', 'hif', 'bcl', 'gan', 'frr',
-            'bo', 'rue', 'glk', 'mhr', 'nds-nl', 'fiu-vro', 'ps', 'tk', 'pag',
-            'vls', 'gv', 'xmf', 'diq', 'km', 'kv', 'zea', 'csb', 'crh', 'hak',
-            'vep', 'sc', 'ay', 'dv', 'so', 'zh-classical', 'nrm', 'rm', 'udm',
-            'koi', 'kw', 'ug', 'stq', 'lad', 'wuu', 'lij', 'eml', 'fur', 'mt',
-            'bh', 'as', 'cbk-zam', 'gn', 'pi', 'pcd', 'szl', 'gag', 'ksh',
-            'nov', 'ang', 'ie', 'nv', 'ace', 'ext', 'frp', 'mwl', 'ln', 'sn',
-            'lez', 'dsb', 'pfl', 'krc', 'haw', 'pdc', 'kab', 'xal', 'rw', 'myv',
-            'to', 'arc', 'kl', 'bjn', 'kbd', 'lo', 'ha', 'pap', 'tpi', 'av',
-            'lbe', 'mdf', 'jbo', 'na', 'wo', 'bxr', 'ty', 'srn', 'ig', 'nso',
-            'kaa', 'kg', 'tet', 'ab', 'ltg', 'zu', 'za', 'cdo', 'tyv', 'chy',
-            'tw', 'rmy', 'roa-rup', 'cu', 'tn', 'om', 'chr', 'got', 'bi', 'pih',
-            'rn', 'sm', 'bm', 'ss', 'iu', 'sd', 'pnt', 'ki', 'xh', 'ts', 'ee',
-            'ak', 'ti', 'fj', 'lg', 'ks', 'ff', 'sg', 'ny', 've', 'cr', 'st',
-            'dz', 'ik', 'tum', 'ch',
+            'en', 'sv', 'ceb', 'de', 'nl', 'fr', 'ru', 'war', 'it', 'es', 'pl',
+            'vi', 'ja', 'pt', 'zh', 'uk', 'ca', 'fa', 'no', 'sh', 'ar', 'fi',
+            'hu', 'id', 'ro', 'cs', 'ko', 'sr', 'ms', 'tr', 'eu', 'eo', 'min',
+            'da', 'kk', 'bg', 'sk', 'hy', 'he', 'lt', 'hr', 'sl', 'et', 'uz',
+            'gl', 'zh-min-nan', 'nn', 'la', 'vo', 'ce', 'simple', 'el', 'be',
+            'ka', 'az', 'ur', 'hi', 'th', 'oc', 'mk', 'ta', 'mg', 'new', 'cy',
+            'tt', 'bs', 'lv', 'te', 'tl', 'pms', 'be-tarask', 'br', 'ky', 'ht',
+            'sq', 'jv', 'ast', 'lb', 'mr', 'zh-yue', 'ml', 'bn', 'tg', 'pnb',
+            'is', 'af', 'ga', 'sco', 'ba', 'cv', 'fy', 'lmo', 'my', 'sw', 'an',
+            'yo', 'ne', 'io', 'gu', 'scn', 'bpy', 'nds', 'ku', 'pa', 'als',
+            'kn', 'qu', 'ia', 'su', 'bar', 'ckb', 'mn', 'arz', 'bat-smg', 'nap',
+            'bug', 'wa', 'gd', 'yi', 'am', 'map-bms', 'mzn', 'fo', 'si', 'nah',
+            'li', 'vec', 'sah', 'hsb', 'or', 'os', 'mrj', 'sa', 'mhr',
+            'roa-tara', 'pam', 'azb', 'ilo', 'se', 'mi', 'ps', 'bcl', 'hif',
+            'eml', 'gan', 'hak', 'diq', 'bh', 'glk', 'vls', 'nds-nl', 'rue',
+            'bo', 'xmf', 'fiu-vro', 'co', 'sc', 'tk', 'vep', 'lrc', 'csb', 'sd',
+            'gv', 'km', 'crh', 'szl', 'kv', 'wuu', 'frr', 'zea', 'zh-classical',
+            'as', 'so', 'stq', 'udm', 'ay', 'kw', 'cdo', 'nrm', 'koi', 'lad',
+            'ie', 'rm', 'mt', 'fur', 'pcd', 'gn', 'dsb', 'lij', 'dv', 'cbk-zam',
+            'myv', 'nso', 'ksh', 'ext', 'ang', 'gag', 'mwl', 'lez', 'ace', 'ug',
+            'kab', 'pi', 'pag', 'nv', 'sn', 'frp', 'av', 'ln', 'pfl', 'haw',
+            'xal', 'krc', 'gom', 'mai', 'kaa', 'rw', 'pdc', 'to', 'bxr', 'kl',
+            'nov', 'arc', 'kbd', 'bjn', 'lo', 'ha', 'tet', 'pap', 'tpi', 'tyv',
+            'na', 'lbe', 'jbo', 'roa-rup', 'ty', 'mdf', 'kg', 'za', 'ig', 'wo',
+            'srn', 'ki', 'ab', 'ltg', 'zu', 'lg', 'om', 'rmy', 'chy', 'cu',
+            'tw', 'tn', 'chr', 'rn', 'bi', 'pih', 'xh', 'tum', 'got', 'sm',
+            'ss', 'pnt', 'ch', 'bm', 'iu', 'ee', 'st', 'ts', 'ks', 'fj', 'ak',
+            'sg', 'ik', 've', 'ff', 'ny', 'ti', 'dz', 'cr', 'ady', 'jam'
         ]
 
-        langs = self.languages_by_size + ['test', 'test2']  # Sites we want to edit but not count as real languages
+        # Sites we want to edit but not count as real languages
+        self.test_codes = ['test', 'test2']
 
-        self.langs = dict([(lang, '%s.wikipedia.org' % lang)
-                           for lang in langs])
+        super(Family, self).__init__()
 
         self.category_redirect_templates = {
             '_default': (),
@@ -64,8 +98,7 @@ class Family(family.WikimediaFamily):
             'es': (u'Categoría redirigida',),
             'eu': (u'Kategoria redirect',),
             'fa': (u'رده بهتر',
-                   u'انتقال رده',
-                   u'فیلم‌های امریکایی',),
+                   u'انتقال رده',),
             'fr': (u'Redirection de catégorie',),
             'gv': (u'Aastiurey ronney',),
             'hi': (u'श्रेणीअनुप्रेषित',
@@ -97,6 +130,7 @@ class Family(family.WikimediaFamily):
                    u'CategoryRedirect',
                    u'Category redirect',
                    u'Catredirect',),
+            'sco': ('Category redirect',),
             'simple': (u'Category redirect',
                        u'Categoryredirect',
                        u'Catredirect',),
@@ -139,7 +173,7 @@ class Family(family.WikimediaFamily):
             'ast': u'Dixebra',
             'ar':  u'صفحات توضيح',
             'be':  u'Disambig',
-            'be-x-old':  u'Вікіпэдыя:Неадназначнасьці',
+            'be-tarask':  u'Вікіпэдыя:Неадназначнасьці',
             'bg':  u'Пояснителни страници',
             'ca':  u'Pàgines de desambiguació',
             'cbk-zam': u'Desambiguo',
@@ -225,7 +259,7 @@ class Family(family.WikimediaFamily):
         self.cross_allowed = [
             'ab', 'ace', 'af', 'ak', 'als', 'am', 'an', 'ang', 'ar', 'arc',
             'arz', 'as', 'ast', 'av', 'ay', 'az', 'ba', 'bar', 'bat-smg', 'bcl',
-            'be', 'be-x-old', 'bg', 'bh', 'bi', 'bjn', 'bm', 'bo', 'bpy', 'bug',
+            'be', 'be-tarask', 'bg', 'bh', 'bi', 'bjn', 'bm', 'bo', 'bpy', 'bug',
             'bxr', 'ca', 'cbk-zam', 'cdo', 'ce', 'ceb', 'ch', 'chr', 'chy',
             'ckb', 'co', 'cr', 'crh', 'csb', 'cu', 'cv', 'cy', 'da', 'diq',
             'dsb', 'dz', 'ee', 'el', 'eml', 'en', 'eo', 'et', 'eu', 'ext', 'fa',
@@ -254,98 +288,6 @@ class Family(family.WikimediaFamily):
         # but some languages don't use this.
         self.nocapitalize = ['jbo']
 
-        # Which languages have a special order for putting interlanguage links,
-        # and what order is it? If a language is not in interwiki_putfirst,
-        # alphabetical order on language code is used. For languages that are in
-        # interwiki_putfirst, interwiki_putfirst is checked first, and
-        # languages are put in the order given there. All other languages are
-        # put after those, in code-alphabetical order.
-
-        self.alphabetic_sr = [
-            'ace', 'kbd', 'af', 'ak', 'als', 'am', 'ang', 'ab', 'ar', 'an',
-            'arc', 'roa-rup', 'frp', 'arz', 'as', 'ast', 'gn', 'av', 'ay', 'az',
-            'bjn', 'id', 'ms', 'bg', 'bm', 'zh-min-nan', 'nan', 'map-bms', 'jv',
-            'su', 'ba', 'be', 'be-x-old', 'bh', 'bcl', 'bi', 'bn', 'bo', 'bar',
-            'bs', 'bpy', 'br', 'bug', 'bxr', 'ca', 'ceb', 'ch', 'cbk-zam', 'sn',
-            'tum', 'ny', 'cho', 'chr', 'co', 'cy', 'cv', 'cs', 'da', 'dk',
-            'pdc', 'de', 'nv', 'dsb', 'na', 'dv', 'dz', 'mh', 'et', 'el', 'eml',
-            'en', 'myv', 'es', 'eo', 'ext', 'eu', 'ee', 'fa', 'hif', 'fo', 'fr',
-            'fy', 'ff', 'fur', 'ga', 'gv', 'sm', 'gag', 'gd', 'gl', 'gan', 'ki',
-            'glk', 'got', 'gu', 'ha', 'hak', 'xal', 'haw', 'he', 'hi', 'ho',
-            'hsb', 'hr', 'hy', 'io', 'ig', 'ii', 'ilo', 'ia', 'ie', 'iu', 'ik',
-            'os', 'xh', 'zu', 'is', 'it', 'ja', 'ka', 'kl', 'kr', 'pam', 'krc',
-            'csb', 'kk', 'kw', 'rw', 'ky', 'mrj', 'rn', 'sw', 'km', 'kn', 'ko',
-            'kv', 'kg', 'ht', 'ks', 'ku', 'kj', 'lad', 'lbe', 'la', 'ltg', 'lv',
-            'to', 'lb', 'lez', 'lt', 'lij', 'li', 'ln', 'lo', 'jbo', 'lg',
-            'lmo', 'hu', 'mk', 'mg', 'mt', 'mi', 'min', 'cdo', 'mwl', 'ml',
-            'mdf', 'mo', 'mn', 'mr', 'mus', 'my', 'mzn', 'nah', 'fj', 'ne',
-            'nl', 'nds-nl', 'cr', 'new', 'nap', 'ce', 'frr', 'pih', 'no', 'nb',
-            'nn', 'nrm', 'nov', 'oc', 'mhr', 'or', 'om', 'ng', 'hz', 'uz', 'pa',
-            'pfl', 'pag', 'pap', 'koi', 'pi', 'pcd', 'pms', 'nds', 'pnb', 'pl',
-            'pt', 'pnt', 'ps', 'aa', 'kaa', 'crh', 'ty', 'ksh', 'ro', 'rmy',
-            'rm', 'qu', 'ru', 'rue', 'sa', 'sah', 'se', 'sg', 'sc', 'sco', 'sd',
-            'stq', 'st', 'nso', 'tn', 'sq', 'si', 'scn', 'simple', 'ss', 'sk',
-            'sl', 'cu', 'szl', 'so', 'ckb', 'srn', 'sr', 'sh', 'fi', 'sv', 'ta',
-            'shi', 'tl', 'kab', 'roa-tara', 'tt', 'te', 'tet', 'th', 'ti', 'vi',
-            'tg', 'tokipona', 'tp', 'tpi', 'chy', 've', 'tr', 'tk', 'tw', 'tyv',
-            'udm', 'uk', 'ur', 'ug', 'za', 'vec', 'vep', 'vo', 'fiu-vro', 'wa',
-            'vls', 'war', 'wo', 'wuu', 'ts', 'xmf', 'yi', 'yo', 'diq', 'zea',
-            'zh', 'zh-tw', 'zh-cn', 'zh-classical', 'zh-yue', 'bat-smg',
-        ]
-
-        self.interwiki_putfirst = {
-            'be-x-old': self.alphabetic,
-            'en': self.alphabetic,
-            'et': self.alphabetic_revised,
-            'fi': self.alphabetic_revised,
-            'fiu-vro': self.alphabetic_revised,
-            'fy': self.fyinterwiki,
-            'he': ['en'],
-            'hu': ['en'],
-            'lb': self.alphabetic,
-            'mk': self.alphabetic,
-            'ms': self.alphabetic_revised,
-            'nds': ['nds-nl'],
-            'nds-nl': ['nds'],
-            'nn': ['no', 'sv', 'da'] + self.alphabetic,
-            'no': self.alphabetic,
-            'nv': ['en', 'es'] + self.alphabetic,
-            'pdc': ['de', 'en'],
-            'pl': self.alphabetic,
-            'simple': self.alphabetic,
-            'sr': self.alphabetic_sr,
-            'sv': self.alphabetic,
-            'te': ['en', 'hi', 'kn', 'ta', 'ml'],
-            'ur': ['ar', 'fa', 'en'] + self.alphabetic,
-            'vi': self.alphabetic_revised,
-            'yi': ['en', 'he', 'de']
-        }
-
-        self.obsolete = {
-            'aa': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Afar_Wikipedia
-            'cho': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Choctaw_Wikipedia
-            'dk': 'da',
-            'ho': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Hiri_Motu_Wikipedia
-            'hz': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Herero_Wikipedia
-            'ii': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Yi_Wikipedia
-            'kj': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kwanyama_Wikipedia
-            'kr': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kanuri_Wikipedia
-            'mh': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Marshallese_Wikipedia
-            'minnan': 'zh-min-nan',
-            'mo': 'ro',  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Moldovan_Wikipedia
-            'mus': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Muscogee_Wikipedia
-            'nan': 'zh-min-nan',
-            'nl_nds': 'nl-nds',  # miss-spelling
-            'nb': 'no',
-            'ng': None,  # (not reachable) https://meta.wikimedia.org/wiki/Inactive_wikis
-            'jp': 'ja',
-            'ru-sib': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Siberian_Wikipedia
-            'tlh': None,
-            'tokipona': None,
-            'zh-tw': 'zh',
-            'zh-cn': 'zh'
-        }
-
         # Languages that used to be coded in iso-8859-1
         self.latin1old = [
             'de', 'en', 'et', 'es', 'ia', 'la', 'af', 'cs', 'fr', 'pt', 'sl',
@@ -353,166 +295,40 @@ class Family(family.WikimediaFamily):
             'nds', 'co', 'mi', 'mr', 'id', 'lv', 'sw', 'tt', 'uk', 'vo', 'ga',
             'na', 'es', 'nl', 'da', 'dk', 'sv', 'test']
 
-        self.crossnamespace[0] = {
-            '_default': {
-                'pt': [102],
-                'als': [104],
-                'ar': [104],
-                'de': [4],
-                'en': [12],
-                'es': [104],
-                'fi': [4],
-                'fr': [104],
-                'hr': [102],
-                'lt': [104],
-            },
-            'km': {
-                '_default': [0, 4, 12],
-            },
-            # wrong wikipedia namespace alias
-            'mzn': {
-                '_default': [0, 4],
-
-            },
-        }
-        self.crossnamespace[1] = {
-            '_default': {
-                'pt': [103],
-                'als': [105],
-                'ar': [105],
-                'en': [13],
-                'es': [105],
-                'fi': [5],
-                'fr': [105],
-                'hr': [103],
-                'lt': [105],
-            },
-        }
-        self.crossnamespace[4] = {
-            '_default': {
-                '_default': [12],
-            },
-            'de': {
-                '_default': [0, 10, 12],
-                'el': [100, 12],
-                'es': [104, 12],
-            },
-            'fi': {
-                '_default': [0, 12]
-            },
-            'mzn': {
-                '_default': [0, 12]
-            },
-        }
-        self.crossnamespace[5] = {
-            'fi': {
-                '_default': [1]}
-        }
-        self.crossnamespace[12] = {
-            '_default': {
-                '_default': [4],
-            },
-            'en': {
-                '_default': [0, 4],
-            },
-        }
-        self.crossnamespace[13] = {
-            'en': {
-                '_default': [0],
-            },
-        }
-        self.crossnamespace[102] = {
-            'pt': {
-                '_default': [0],
-                'als': [0, 104],
-                'ar': [0, 104],
-                'es': [0, 104],
-                'fr': [0, 104],
-                'lt': [0, 104]
-            },
-            'hr': {
-                '_default': [0],
-                'als': [0, 104],
-                'ar': [0, 104],
-                'es': [0, 104],
-                'fr': [0, 104],
-                'lt': [0, 104]
-            },
-        }
-        self.crossnamespace[103] = {
-            'pt': {
-                '_default': [1],
-                'als': [1, 105],
-                'es': [1, 105],
-                'fr': [1, 105],
-                'lt': [1, 105]
-            },
-            'hr': {
-                '_default': [1],
-                'als': [1, 105],
-                'es': [1, 105],
-                'fr': [1, 105],
-                'lt': [1, 105]
-            },
-        }
-        self.crossnamespace[104] = {
-            'als': {
-                '_default': [0],
-                'pt': [0, 102],
-                'hr': [0, 102],
-            },
-            'ar': {
-                '_default': [0, 100],
-                'hr': [0, 102],
-                'pt': [0, 102],
-            },
-            'es': {
-                '_default': [0],
-                'pt': [0, 102],
-                'hr': [0, 102],
-            },
-            'fr': {
-                '_default': [0],
-                'pt': [0, 102],
-                'hr': [0, 102],
-            },
-            'lt': {
-                '_default': [0],
-                'pt': [0, 102],
-                'hr': [0, 102],
-            },
-        }
-        self.crossnamespace[105] = {
-            'als': {
-                '_default': [1],
-                'pt': [0, 103],
-                'hr': [0, 103],
-            },
-            'ar': {
-                '_default': [1, 101],
-            },
-            'es': {
-                '_default': [1],
-                'pt': [0, 103],
-                'hr': [0, 103],
-            },
-            'fr': {
-                '_default': [1],
-                'pt': [0, 103],
-                'hr': [0, 103],
-            },
-            'lt': {
-                '_default': [1],
-                'pt': [0, 103],
-                'hr': [0, 103],
-            },
+        # Subpages for documentation.
+        # TODO: List is incomplete, to be completed for missing languages.
+        # TODO: Remove comments for appropriate pages
+        self.doc_subpages = {
+            '_default': ((u'/doc', ),
+                         ['ar', 'bn', 'cs', 'da', 'en', 'es',
+                          'hu', 'id', 'ilo', 'ja', 'ms',
+                          'ms', 'pt', 'ro', 'ru', 'simple', 'vi', 'zh']
+                         ),
+            'ca': (u'/ús', ),
+            'de': (u'Doku', u'/Meta'),
+            'dsb': (u'/Dokumentacija', ),
+            'eu': (u'txantiloi dokumentazioa', u'/dok'),
+            'fa': (u'/doc', u'/توضیحات'),
+            # fi: no idea how to handle this type of subpage at :Metasivu:
+            'fi': ((), ),
+            'fr': (u'/documentation', ),
+            'hsb': (u'/Dokumentacija', ),
+            'it': (u'/Man', ),
+            'ka': (u'/ინფო', ),
+            'ko': (u'/설명문서', ),
+            'no': (u'/dok', ),
+            'nn': (u'/dok', ),
+            'pl': (u'/opis', ),
+            'sk': (u'/Dokumentácia', ),
+            'sv': (u'/dok', ),
+            'uk': (u'/Документація', ),
         }
 
     def get_known_families(self, site):
         """Override the family interwiki prefixes for each site."""
         # In Swedish Wikipedia 's:' is part of page title not a family
         # prefix for 'wikisource'.
-        if site.language() == 'sv':
+        if site.code == 'sv':
             d = self.known_families.copy()
             d.pop('s')
             d['src'] = 'wikisource'
@@ -529,39 +345,4 @@ class Family(family.WikimediaFamily):
             return 'utf-8', 'iso8859-5'
         if code in self.latin1old:
             return 'utf-8', 'iso-8859-1'
-        return self.code2encoding(code),
-
-        # Subpages for documentation.
-        # TODO: List is incomplete, to be completed for missing languages.
-        # TODO: Remove comments for appropriate pages
-        self.doc_subpages = {
-            '_default': ((u'/doc', ),
-                         ['ar', 'bn', 'cs', 'da', 'en', 'es', 'fa',
-                          'hu', 'id', 'ilo', 'ja', 'ms',
-                          'ms', 'pt', 'ro', 'ru', 'simple', 'vi', 'zh']
-                         ),
-            'ca': (u'/ús', ),
-            'de': (u'Doku', u'/Meta'),
-            'dsb': (u'/Dokumentacija', ),
-            'eu': (u'txantiloi dokumentazioa', u'/dok'),
-            # fi: no idea how to handle this type of subpage at :Metasivu:
-            'fi': ((), ),
-            'fr': (u'/documentation', ),
-            'hsb': (u'/Dokumentacija', ),
-            'it': (u'/Man', ),
-            'ka': (u'/ინფო', ),
-            'ko': (u'/설명문서', ),
-            'no': (u'/dok', ),
-            'nn': (u'/dok', ),
-            'pl': (u'/opis', ),
-            'sk': (u'/Dokumentácia', ),
-            'sv': (u'/dok', ),
-            'uk': (u'/Документація', ),
-        }
-
-    def shared_data_repository(self, code, transcluded=False):
-        """Return the shared data repository for this site."""
-        if code in ['test', 'test2']:
-            return ('test', 'wikidata')
-        else:
-            return ('wikidata', 'wikidata')
+        return self.code2encoding(code)

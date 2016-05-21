@@ -5,6 +5,12 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
+import os.path
+
+from pywikibot import config
+
 __version__ = '$Id$'
 
 parameter_help = u"""
@@ -40,29 +46,7 @@ fixes = {
     # make remaining tags XHTML compliant.
     'HTML': {
         'regex': True,
-        'msg': {
-            'ar':  u'روبوت: تحويل/تصليح HTML',
-            'be':  u'Бот: карэкцыя HTML',
-            'cs':  u'převod/oprava HTML',
-            'en':  u'Robot: Converting/fixing HTML',
-            'eo':  u'Bot: koredtado de HTMLa teksto',
-            'fa':  u'ربات:تبدیل/تصحیح کدهای اچ‌تی‌ام‌ال',
-            'de':  u'Bot: konvertiere/korrigiere HTML',
-            'fr':  u'Robot: convertit/fixe HTML',
-            'he':  u'בוט: ממיר/מתקן HTML',
-            'ja':  u'ロボットによる: HTML転換',
-            'ksh': u'Bot: vun HTML en Wikikood wandelle',
-            'ia':  u'Robot: conversion/reparation de HTML',
-            'lt':  u'robotas: konvertuojamas/taisomas HTML',
-            'nl':  u'Bot: conversie/reparatie HTML',
-            'pl':  u'Robot konwertuje/naprawia HTML',
-            'pt':  u'Bot: Corrigindo HTML',
-            'ru':  u'Бот: коррекция HTML',
-            'sr':  u'Бот: Поправка HTML-а',
-            'sv':  u'Bot: Konverterar/korrigerar HTML',
-            'uk':  u'Бот: корекцiя HTML',
-            'zh':  u'機器人: 轉換HTML',
-        },
+        'msg': 'pywikibot-fixes-html',
         'replacements': [
             # Everything case-insensitive (?i)
             # Keep in mind that MediaWiki automatically converts <br> to <br />
@@ -109,27 +93,36 @@ fixes = {
             'de': u'Bot: korrigiere Grammatik',
         },
         'replacements': [
-            #   (u'([Ss]owohl) ([^,\.]+?), als auch',                                                            r'\1 \2 als auch'),
+            #   (u'([Ss]owohl) ([^,\.]+?), als auch', r'\1 \2 als auch'),
             #   (u'([Ww]eder) ([^,\.]+?), noch', r'\1 \2 noch'),
             #
             # Vorsicht bei Substantiven, z. B. 3-Jähriger!
-            (u'(\d+)(minütig|stündig|tägig|wöchig|jährig|minütlich|stündlich|täglich|wöchentlich|jährlich|fach|mal|malig|köpfig|teilig|gliedrig|geteilt|elementig|dimensional|bändig|eckig|farbig|stimmig)', r'\1-\2'),
+            (r'(\d+)(minütig|stündig|tägig|wöchig|jährig|minütlich|stündlich'
+             r'|täglich|wöchentlich|jährlich|fach|mal|malig|köpfig|teilig'
+             r'|gliedrig|geteilt|elementig|dimensional|bändig|eckig|farbig'
+             r'|stimmig)', r'\1-\2'),
             # zusammengesetztes Wort, Bindestrich wird durchgeschleift
-            (u'(?<!\w)(\d+|\d+[\.,]\d+)(\$|€|DM|£|¥|mg|g|kg|ml|cl|l|t|ms|min|µm|mm|cm|dm|m|km|ha|°C|kB|MB|GB|TB|W|kW|MW|GW|PS|Nm|eV|kcal|mA|mV|kV|Ω|Hz|kHz|MHz|GHz|mol|Pa|Bq|Sv|mSv)([²³]?-[\w\[])',           r'\1-\2\3'),
+            (r'(?<!\w)(\d+|\d+[.,]\d+)(\$|€|DM|£|¥|mg|g|kg|ml|cl|l|t|ms|min'
+             r'|µm|mm|cm|dm|m|km|ha|°C|kB|MB|GB|TB|W|kW|MW|GW|PS|Nm|eV|kcal'
+             r'|mA|mV|kV|Ω|Hz|kHz|MHz|GHz|mol|Pa|Bq|Sv|mSv)([²³]?-[\w\[])', r'\1-\2\3'),
             # Größenangabe ohne Leerzeichen vor Einheit
             # weggelassen wegen vieler falsch Positiver: s, A, V, C, S, J, %
-            (u'(?<!\w)(\d+|\d+[\.,]\d+)(\$|€|DM|£|¥|mg|g|kg|ml|cl|l|t|ms|min|µm|mm|cm|dm|m|km|ha|°C|kB|MB|GB|TB|W|kW|MW|GW|PS|Nm|eV|kcal|mA|mV|kV|Ω|Hz|kHz|MHz|GHz|mol|Pa|Bq|Sv|mSv)(?=\W|²|³|$)',          r'\1 \2'),
+            (r'(?<!\w)(\d+|\d+[.,]\d+)(\$|€|DM|£|¥|mg|g|kg|ml|cl|l|t|ms|min'
+             r'|µm|mm|cm|dm|m|km|ha|°C|kB|MB|GB|TB|W|kW|MW|GW|PS|Nm|eV|kcal'
+             r'|mA|mV|kV|Ω|Hz|kHz|MHz|GHz|mol|Pa|Bq|Sv|mSv)(?=\W|²|³|$)', r'\1 \2'),
             # Temperaturangabe mit falsch gesetztem Leerzeichen
-            (u'(?<!\w)(\d+|\d+[\.,]\d+)° C(?=\W|²|³|$)',          r'\1' + u' °C'),
+            (r'(?<!\w)(\d+|\d+[.,]\d+)° C(?=\W|²|³|$)', r'\1 °C'),
             # Kein Leerzeichen nach Komma
-            (u'([a-zäöüß](\]\])?,)((\[\[)?[a-zäöüA-ZÄÖÜ])',                                                                          r'\1 \3'),
+            (r'([a-zäöüß](\]\])?,)((\[\[)?[a-zäöüA-ZÄÖÜ])', r'\1 \3'),
             # Leerzeichen und Komma vertauscht
-            (u'([a-zäöüß](\]\])?) ,((\[\[)?[a-zäöüA-ZÄÖÜ])',                                                                          r'\1, \3'),
-            # Plenks (d. h. Leerzeichen auch vor dem Komma/Punkt/Ausrufezeichen/Fragezeichen)
-            # Achtung bei Französisch: https://de.wikipedia.org/wiki/Plenk#Sonderfall_Franz.C3.B6sisch
-            # Leerzeichen vor Doppelpunkt/Semikolon kann korrekt sein, nach irgendeiner Norm für Zitationen.
-            (u'([a-zäöüß](\]\])?) ([,\.!\?]) ((\[\[)?[a-zäöüA-ZÄÖÜ])',                                                                          r'\1\3 \4'),
-            #   (u'([a-z]\.)([A-Z])',                                                                             r'\1 \2'),
+            (r'([a-zäöüß](\]\])?) ,((\[\[)?[a-zäöüA-ZÄÖÜ])', r'\1, \3'),
+            # Plenks (Leerzeichen vor Komma/Punkt/Ausrufezeichen/Fragezeichen)
+            # Achtung bei Französisch:
+            # https://de.wikipedia.org/wiki/Plenk#Franz.C3.B6sische_Sprache
+            # Leerzeichen vor Doppelpunkt/Semikolon kann korrekt sein,
+            # z.B. nach Quellenangaben
+            (r'([a-zäöüß](\]\])?) ([,.!?]) ((\[\[)?[a-zäöüA-ZÄÖÜ])', r'\1\3 \4'),
+            #   (u'([a-z]\.)([A-Z])', r'\1 \2'),
         ],
         'exceptions': {
             'inside-tags': [
@@ -150,8 +143,8 @@ fixes = {
             'inside': [
                 r'<code>.*</code>',  # because of code examples
                 r'{{[Zz]itat\|.*?}}',
-                r'{{' + u'§' + r'\|.*?}}',   # Gesetzesparagraph
-                u'§' + r'?\d+[a-z]',  # Gesetzesparagraph
+                r'{{§\|.*?}}',   # Gesetzesparagraph
+                r'§?\d+[a-z]',  # Gesetzesparagraph
                 r'Ju 52/1m',  # Flugzeugbezeichnung
                 r'Ju 52/3m',  # Flugzeugbezeichnung
                 r'AH-1W',     # Hubschrauberbezeichnung
@@ -161,13 +154,19 @@ fixes = {
                 r'DOS/4GW',   # Software
                 r'ntfs-3g',   # Dateisystem-Treiber
                 r'/\w(,\w)*/',      # Laut-Aufzählung in der Linguistik
-                r'[xyz](,[xyz])+',  # Variablen in der Mathematik (unklar, ob Leerzeichen hier Pflicht sind)
-                r'(?m)^;(.*?)$',    # Definitionslisten, dort gibt es oft absichtlich Leerzeichen vor Doppelpunkten
-                r'\d+h( |&nbsp;)\d+m',  # Schreibweise für Zeiten, vor allem in Film-Infoboxen. Nicht korrekt, aber dafür schön kurz.
+                # Variablen in der Mathematik (unklar, ob Leerzeichen hier Pflicht sind)
+                r'[xyz](,[xyz])+',
+                # Definitionslisten, dort gibt es oft absichtlich Leerzeichen vor Doppelpunkten
+                r'(?m)^;(.*?)$',
+                r'\d+h( |&nbsp;)\d+m',
+                # Schreibweise für Zeiten, vor allem in Film-Infoboxen.
+                # Nicht korrekt, aber dafür schön kurz.
                 r'(?i)\[\[(Bild|Image|Media):.+?\|',  # Dateinamen auslassen
-                r'{{bgc\|.*?}}',  # Hintergrundfarbe
+                r'{{bgc\|.*?}}',                      # Hintergrundfarbe
                 r'<sup>\d+m</sup>',                   # bei chemischen Formeln
-                r'\([A-Z][A-Za-z]*(,[A-Z][A-Za-z]*(<sup>.*?</sup>|<sub>.*?</sub>|))+\)'  # chemische Formel, z. B. AuPb(Pb,Sb,Bi)Te. Hier sollen keine Leerzeichen hinter die Kommata.
+                r'\([A-Z][A-Za-z]*(,[A-Z][A-Za-z]*(<sup>.*?</sup>|<sub>.*?</sub>|))+\)'
+                # chemische Formel, z. B. AuPb(Pb,Sb,Bi)Te.
+                # Hier sollen keine Leerzeichen hinter die Kommata.
             ],
             'title': [
                 r'Arsen',  # chemische Formel
@@ -181,27 +180,7 @@ fixes = {
     # anything.
     'syntax': {
         'regex': True,
-        'msg': {
-            'ar':  u'بوت: تصليح تهيئة الويكي',
-            'be':  u'Бот: Карэкцыя вiкi-сiнтаксiсу',
-            'cs':  u'Oprava wikisyntaxe',
-            'de':  u'Bot: Korrigiere Wiki-Syntax',
-            'en':  u'Robot: Fixing wiki syntax',
-            'eo':  u'Bot: Korektado de vikia sintakso',
-            'fa':  u'ربات:تصحیح قالب ویکی‌نویسی',
-            'fr':  u'Bot: Corrige wiki-syntaxe',
-            'he':  u'בוט: מתקן תחביר ויקי',
-            'ia':  u'Robot: Reparation de syntaxe wiki',
-            'ja':  u'ロボットによる: wiki構文修正',
-            'lt':  u'robotas: Taisoma wiki sintaksė',
-            'nl':  u'Bot: reparatie wikisyntaxis',
-            'pl':  u'Robot poprawia wiki-składnię',
-            'pt':  u'Bot: Corrigindo sintaxe wiki',
-            'ru':  u'Бот: Коррекция вики синтаксиса',
-            'sr':  u'Бот: Поправка вики синтаксе',
-            'uk':  u'Бот: Корекцiя вiкi-синтаксису',
-            'zh':  u'機器人: 修正wiki語法',
-        },
+        'msg': 'pywikibot-fixes-syntax',
         'replacements': [
             # external link in double brackets
             (r'\[\[(?P<url>https?://[^\]]+?)\]\]',   r'[\g<url>]'),
@@ -216,7 +195,8 @@ fixes = {
             # external link and description separated by a dash.
             # ATTENTION: while this is a mistake in most cases, there are some
             # valid URLs that contain dashes!
-            (r'\[(?P<url>https?://[^\|\]\s]+?) *\| *(?P<label>[^\|\]]+?)\]', r'[\g<url> \g<label>]'),
+            (r'\[(?P<url>https?://[^\|\]\s]+?) *\| *(?P<label>[^\|\]]+?)\]',
+             r'[\g<url> \g<label>]'),
             # wiki link closed by single bracket.
             # ATTENTION: There are some false positives, for example
             # Brainfuck code examples or MS-DOS parameter instructions.
@@ -257,27 +237,7 @@ fixes = {
     # be safe to run automatically.
     'syntax-safe': {
         'regex': True,
-        'msg': {
-            'ar':  u'بوت: تصليح تهيئة الويكي',
-            'be':  u'Бот: Карэкцыя вiкi-сiнтаксiсу',
-            'cs':  u'Oprava wikisyntaxe',
-            'de':  u'Bot: Korrigiere Wiki-Syntax',
-            'en':  u'Robot: Fixing wiki syntax',
-            'eo':  u'Bot: Korektado de vikia sintakso',
-            'fa':  u'ربات:تصحیح قالب ویکی‌نویسی',
-            'fr':  u'Bot: Corrige wiki-syntaxe',
-            'he':  u'בוט: מתקן תחביר ויקי',
-            'ia':  u'Robot: Reparation de syntaxe wiki',
-            'ja':  u'ロボットによる: wiki構文修正',
-            'lt':  u'robotas: Taisoma wiki sintaksė',
-            'nl':  u'Bot: reparatie wikisyntaxis',
-            'pl':  u'Robot poprawia wiki-składnię',
-            'pt':  u'Bot: Corrigindo sintaxe wiki',
-            'ru':  u'Бот: Коррекция вики синтаксиса',
-            'sr':  u'Бот: Поправка вики синтаксе',
-            'uk':  u'Бот: Корекцiя вiкi-синтаксису',
-            'zh':  u'機器人: 修正wiki語法',
-        },
+        'msg': 'pywikibot-fixes-syntax',
         'replacements': [
             # external link in double brackets
             (r'\[\[(?P<url>https?://[^\]]+?)\]\]',   r'[\g<url>]'),
@@ -288,11 +248,13 @@ fixes = {
             # external link and description separated by a dash, with
             # whitespace in front of the dash, so that it is clear that
             # the dash is not a legitimate part of the URL.
-            (r'\[(?P<url>https?://[^\|\] \r\n]+?) +\| *(?P<label>[^\|\]]+?)\]', r'[\g<url> \g<label>]'),
+            (r'\[(?P<url>https?://[^\|\] \r\n]+?) +\| *(?P<label>[^\|\]]+?)\]',
+             r'[\g<url> \g<label>]'),
             # dash in external link, where the correct end of the URL can
             # be detected from the file extension. It is very unlikely that
             # this will cause mistakes.
-            (r'\[(?P<url>https?://[^\|\] ]+?(\.pdf|\.html|\.htm|\.php|\.asp|\.aspx|\.jsp)) *\| *(?P<label>[^\|\]]+?)\]', r'[\g<url> \g<label>]'),
+            (r'\[(?P<url>https?://[^\|\] ]+?(\.pdf|\.html|\.htm|\.php|\.asp|\.aspx|\.jsp)) *\|'
+             r' *(?P<label>[^\|\]]+?)\]', r'[\g<url> \g<label>]'),
         ],
         'exceptions': {
             'inside-tags': [
@@ -314,9 +276,11 @@ fixes = {
         'replacements': [
             (r'\batlantische(r|n|) Ozean', r'Atlantische\1 Ozean'),
             (r'\bdeutsche(r|n|) Bundestag\b', r'Deutsche\1 Bundestag'),
-            (r'\bdeutschen Bundestags\b', r'Deutschen Bundestags'),  # Aufpassen, z. B. 'deutsche Bundestagswahl'
+            # Aufpassen, z. B. 'deutsche Bundestagswahl'
+            (r'\bdeutschen Bundestags\b', r'Deutschen Bundestags'),
             (r'\bdeutsche(r|n|) Reich\b', r'Deutsche\1 Reich'),
-            (r'\bdeutschen Reichs\b', r'Deutschen Reichs'),  # Aufpassen, z. B. 'deutsche Reichsgrenzen'
+            # Aufpassen, z. B. 'deutsche Reichsgrenzen'
+            (r'\bdeutschen Reichs\b', r'Deutschen Reichs'),
             (r'\bdritte(n|) Welt(?!krieg)', r'Dritte\1 Welt'),
             (r'\bdreißigjährige(r|n|) Krieg', r'Dreißigjährige\1 Krieg'),
             (r'\beuropäische(n|) Gemeinschaft', r'Europäische\1 Gemeinschaft'),
@@ -349,7 +313,7 @@ fixes = {
         },
         'replacements': [
             # Bindestrich, Gedankenstrich, Geviertstrich
-            (u'(von \d{3,4}) *(-|&ndash;|–|&mdash;|—) *(\d{3,4})', r'\1 bis \3'),
+            (r'(von \d{3,4}) *(-|&ndash;|–|&mdash;|—) *(\d{3,4})', r'\1 bis \3'),
         ],
     },
 
@@ -392,13 +356,17 @@ fixes = {
             # space after death sign w/ linked date
             #   (u'†\[\[(\d)', u'† [[\\1'),
             #   (u'&dagger;\[\[(\d)', u'† [[\\1'),
-            (u'\[\[(\d+\. (?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)) (\d{1,4})\]\]', u'[[\\1]] [[\\2]]'),
-            # Keine führende Null beim Datum (ersteinmal nur bei denen, bei denen auch ein Leerzeichen fehlt)
-            (u'0(\d+)\.(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)', r'\1. \2'),
+            (r'\[\[(\d+\. (?:Januar|Februar|März|April|Mai|Juni|Juli|August|'
+             r'September|Oktober|November|Dezember)) (\d{1,4})\]\]', r'[[\1]] [[\2]]'),
+            # Keine führende Null beim Datum (erst einmal nur bei fehlenden Leerzeichen)
+            (r'0(\d+)\.(Januar|Februar|März|April|Mai|Juni|Juli|August|'
+             r'September|Oktober|November|Dezember)', r'\1. \2'),
             # Kein Leerzeichen zwischen Tag und Monat
-            (u'(\d+)\.(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)', r'\1. \2'),
+            (r'(\d+)\.(Januar|Februar|März|April|Mai|Juni|Juli|August|'
+             r'September|Oktober|November|Dezember)', r'\1. \2'),
             # Kein Punkt vorm Jahr
-            (u'(\d+)\. (Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\.(\d{1,4})', r'\1. \2 \3'),
+            (r'(\d+)\. (Januar|Februar|März|April|Mai|Juni|Juli|August|'
+             r'September|Oktober|November|Dezember)\.(\d{1,4})', r'\1. \2 \3'),
         ],
         'exceptions': {
             'inside': [
@@ -415,7 +383,7 @@ fixes = {
         'regex': True,
         'msg': 'isbn-formatting',  # use i18n translations
         'replacements': [
-            # colon
+            # Remove colon between the word ISBN and the number
             (r'ISBN: (\d+)', r'ISBN \1'),
             # superfluous word "number"
             (r'ISBN( number| no\.?| No\.?|-Nummer|-Nr\.):? (\d+)', r'ISBN \2'),
@@ -423,17 +391,16 @@ fixes = {
             # hyphen-minus as separator, or spaces between digits and separators.
             # Note that these regular expressions also match valid ISBNs, but
             # these won't be changed.
+            # These two regexes don't verify that the ISBN is of a valid format
+            # but just change separators into normal hypens. The isbn script
+            # does checks and similar but does only match ISBNs with digits and
+            # hypens (and optionally a X/x at the end).
+            (r'ISBN (978|979) *[\- −.‐-―] *(\d+) *[\- −.‐-―] *(\d+) '
+             r'*[\- −.‐-―] *(\d+) *[\- −.‐-―] *(\d)(?!\d)',
+             r'ISBN \1-\2-\3-\4-\5'),  # ISBN-13
 
-            # NOTE
-            # The following regexps are in u'...' format because Python 3.3 does not support
-            # ur'...' strings. They have been converted by copy-pasting them to Python 2.7
-            # and copying back the results.
-
-            # ur'ISBN (978|979) *[\- −\.‐-―] *(\d+) *[\- −\.‐-―] *(\d+) *[\- −\.‐-―] *(\d+) *[\- −\.‐-―] *(\d)(?!\d)'
-            (u'ISBN (978|979) *[\\- \u2212\\.\u2010-\u2015] *(\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d)(?!\\d)', r'ISBN \1-\2-\3-\4-\5'),  # ISBN-13
-
-            # ur'ISBN (\d+) *[\- −\.‐-―] *(\d+) *[\- −\.‐-―] *(\d+) *[\- −\.‐-―] *(\d|X|x)(?!\d)'
-            (u'ISBN (\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d+) *[\\- \u2212\\.\u2010-\u2015] *(\\d|X|x)(?!\\d)', r'ISBN \1-\2-\3-\4'),  # ISBN-10
+            (r'ISBN (\d+) *[\- −.‐-―] *(\d+) *[\- −.‐-―] *(\d+) *[\- −.‐-―] *(\d|X|x)(?!\d)',
+             r'ISBN \1-\2-\3-\4'),  # ISBN-10
             # missing space before ISBN-10 or before ISBN-13,
             # or non-breaking space.
             (r'ISBN(|&nbsp;| )((\d(-?)){12}\d|(\d(-?)){9}[\dXx])', r'ISBN \2'),
@@ -462,96 +429,105 @@ fixes = {
             # FIXME: Do not replace comma in non-Arabic text,
             # interwiki, image links or <math> syntax.
             #   (u' ,', u' ،'),
-            (r'\b' + u'إمرأة' + r'\b', u'امرأة'),
-            (r'\b' + u'الى' + r'\b', u'إلى'),
-            (r'\b' + u'إسم' + r'\b', u'اسم'),
-            (r'\b' + u'الأن' + r'\b', u'الآن'),
-            (r'\b' + u'الة' + r'\b', u'آلة'),
-            (r'\b' + u'فى' + r'\b', u'في'),
-            (r'\b' + u'إبن' + r'\b', u'ابن'),
-            (r'\b' + u'إبنة' + r'\b', u'ابنة'),
-            (r'\b' + u'إقتصاد' + r'\b', u'اقتصاد'),
-            (r'\b' + u'إجتماع' + r'\b', u'اجتماع'),
-            (r'\b' + u'انجيل' + r'\b', u'إنجيل'),
-            (r'\b' + u'اجماع' + r'\b', u'إجماع'),
-            (r'\b' + u'اكتوبر' + r'\b', u'أكتوبر'),
-            (r'\b' + u'إستخراج' + r'\b', u'استخراج'),
-            (r'\b' + u'إستعمال' + r'\b', u'استعمال'),
-            (r'\b' + u'إستبدال' + r'\b', u'استبدال'),
-            (r'\b' + u'إشتراك' + r'\b', u'اشتراك'),
-            (r'\b' + u'إستعادة' + r'\b', u'استعادة'),
-            (r'\b' + u'إستقلال' + r'\b', u'استقلال'),
-            (r'\b' + u'إنتقال' + r'\b', u'انتقال'),
-            (r'\b' + u'إتحاد' + r'\b', u'اتحاد'),
-            (r'\b' + u'املاء' + r'\b', u'إملاء'),
-            (r'\b' + u'إستخدام' + r'\b', u'استخدام'),
-            (r'\b' + u'أحدى' + r'\b', u'إحدى'),
-            (r'\b' + u'لاكن' + r'\b', u'لكن'),
-            (r'\b' + u'إثنان' + r'\b', u'اثنان'),
-            (r'\b' + u'إحتياط' + r'\b', u'احتياط'),
-            (r'\b' + u'إقتباس' + r'\b', u'اقتباس'),
-            (r'\b' + u'ادارة' + r'\b', u'إدارة'),
-            (r'\b' + u'ابناء' + r'\b', u'أبناء'),
-            (r'\b' + u'الانصار' + r'\b', u'الأنصار'),
-            (r'\b' + u'اشارة' + r'\b', u'إشارة'),
-            (r'\b' + u'إقرأ' + r'\b', u'اقرأ'),
-            (r'\b' + u'إمتياز' + r'\b', u'امتياز'),
-            (r'\b' + u'ارق' + r'\b', u'أرق'),
-            (r'\b' + u'اللة' + r'\b', u'الله'),
-            (r'\b' + u'إختبار' + r'\b', u'اختبار'),
-            (u'==[ ]?روابط خارجية[ ]?==', u'== وصلات خارجية =='),
-            (r'\b' + u'ارسال' + r'\b', u'إرسال'),
-            (r'\b' + u'إتصالات' + r'\b', u'اتصالات'),
-            (r'\b' + u'ابو' + r'\b', u'أبو'),
-            (r'\b' + u'ابا' + r'\b', u'أبا'),
-            (r'\b' + u'اخو' + r'\b', u'أخو'),
-            (r'\b' + u'اخا' + r'\b', u'أخا'),
-            (r'\b' + u'اخي' + r'\b', u'أخي'),
-            (r'\b' + u'احد' + r'\b', u'أحد'),
-            (r'\b' + u'اربعاء' + r'\b', u'أربعاء'),
-            (r'\b' + u'اول' + r'\b', u'أول'),
-            (r'\b' + u'(ال|)اهم' + r'\b', u'\\1أهم'),
-            (r'\b' + u'(ال|)اثقل' + r'\b', u'\\1أثقل'),
-            (r'\b' + u'(ال|)امجد' + r'\b', u'\\1أمجد'),
-            (r'\b' + u'(ال|)اوسط' + r'\b', u'\\1أوسط'),
-            (r'\b' + u'(ال|)اشقر' + r'\b', u'\\1أشقر'),
-            (r'\b' + u'(ال|)انور' + r'\b', u'\\1أنور'),
-            (r'\b' + u'(ال|)اصعب' + r'\b', u'\\1أصعب'),
-            (r'\b' + u'(ال|)اسهل' + r'\b', u'\\1أسهل'),
-            (r'\b' + u'(ال|)اجمل' + r'\b', u'\\1أجمل'),
-            (r'\b' + u'(ال|)اقبح' + r'\b', u'\\1أقبح'),
-            (r'\b' + u'(ال|)اطول' + r'\b', u'\\1أطول'),
-            (r'\b' + u'(ال|)اقصر' + r'\b', u'\\1أقصر'),
-            (r'\b' + u'(ال|)اسمن' + r'\b', u'\\1أسمن'),
-            (r'\b' + u'(ال|)اذكى' + r'\b', u'\\1أذكى'),
-            (r'\b' + u'(ال|)اكثر' + r'\b', u'\\1أكثر'),
-            (r'\b' + u'(ال|)افضل' + r'\b', u'\\1أفضل'),
-            (r'\b' + u'(ال|)اكبر' + r'\b', u'\\1أكبر'),
-            (r'\b' + u'(ال|)اشهر' + r'\b', u'\\1أشهر'),
-            (r'\b' + u'(ال|)ابطأ' + r'\b', u'\\1أبطأ'),
-            (r'\b' + u'(ال|)اماني' + r'\b', u'\\1أماني'),
-            (r'\b' + u'(ال|)احلام' + r'\b', u'\\1أحلام'),
-            (r'\b' + u'(ال|)اسماء' + r'\b', u'\\1أسماء'),
-            (r'\b' + u'(ال|)اسامة' + r'\b', u'\\1أسامة'),
-            (r'\b' + u'ابراهيم' + r'\b', u'إبراهيم'),
-            (r'\b' + u'اسماعيل' + r'\b', u'إسماعيل'),
-            (r'\b' + u'ايوب' + r'\b', u'أيوب'),
-            (r'\b' + u'ايمن' + r'\b', u'أيمن'),
-            (r'\b' + u'اوزبكستان' + r'\b', u'أوزبكستان'),
-            (r'\b' + u'اذربيجان' + r'\b', u'أذربيجان'),
-            (r'\b' + u'افغانستان' + r'\b', u'أفغانستان'),
-            (r'\b' + u'انجلترا' + r'\b', u'إنجلترا'),
-            (r'\b' + u'ايطاليا' + r'\b', u'إيطاليا'),
-            (r'\b' + u'اوربا' + r'\b', u'أوروبا'),
-            (r'\b' + u'أوربا' + r'\b', u'أوروبا'),
-            (r'\b' + u'اوغندة' + r'\b', u'أوغندة'),
-            (r'\b' + u'(ال|)ا(لماني|فريقي|سترالي)(ا|ة|تان|ان|ين|ي|ون|و|ات|)' + r'\b', u'\\1أ\\2\\3'),
-            (r'\b' + u'(ال|)ا(وروب|مريك)(ا|ي|ية|يتان|يان|يين|يي|يون|يو|يات|)' + r'\b', u'\\1أ\\2\\3'),
-            (r'\b' + u'(ال|)ا(ردن|رجنتين|وغند|سبان|وكران|فغان)(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)' + r'\b', u'\\1أ\\2\\3'),
-            (r'\b' + u'(ال|)ا(سرائيل|يران|مارات|نكليز|نجليز)(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)' + r'\b', u'\\1إ\\2\\3'),
-            (r'\b' + u'(ال|)(ا|أ)(رثوذكس|رثوذوكس)(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)' + r'\b', u'\\1أرثوذكس\\4'),
-            (r'\b' + u'إست(عمل|خدم|مر|مد|مال|عاض|قام|حال|جاب|قال|زاد|عان|طال)(ت|ا|وا|)' + r'\b', u'است\\1\\2'),
-            (r'\b' + u'إست(حال|قال|طال|زاد|عان|قام|راح|جاب|عاض|مال)ة' + r'\b', u'است\\1ة'),
+            # TODO: Basic explanation in English what it does
+            (r'\bإمرأة\b', 'امرأة'),
+            (r'\bالى\b', 'إلى'),
+            (r'\bإسم\b', 'اسم'),
+            (r'\bالأن\b', 'الآن'),
+            (r'\bالة\b', 'آلة'),
+            (r'\bفى\b', 'في'),
+            (r'\bإبن\b', 'ابن'),
+            (r'\bإبنة\b', 'ابنة'),
+            (r'\bإقتصاد\b', 'اقتصاد'),
+            (r'\bإجتماع\b', 'اجتماع'),
+            (r'\bانجيل\b', 'إنجيل'),
+            (r'\bاجماع\b', 'إجماع'),
+            (r'\bاكتوبر\b', 'أكتوبر'),
+            (r'\bإستخراج\b', 'استخراج'),
+            (r'\bإستعمال\b', 'استعمال'),
+            (r'\bإستبدال\b', 'استبدال'),
+            (r'\bإشتراك\b', 'اشتراك'),
+            (r'\bإستعادة\b', 'استعادة'),
+            (r'\bإستقلال\b', 'استقلال'),
+            (r'\bإنتقال\b', 'انتقال'),
+            (r'\bإتحاد\b', 'اتحاد'),
+            (r'\bاملاء\b', 'إملاء'),
+            (r'\bإستخدام\b', 'استخدام'),
+            (r'\bأحدى\b', 'إحدى'),
+            (r'\bلاكن\b', 'لكن'),
+            (r'\bإثنان\b', 'اثنان'),
+            (r'\bإحتياط\b', 'احتياط'),
+            (r'\bإقتباس\b', 'اقتباس'),
+            (r'\bادارة\b', 'إدارة'),
+            (r'\bابناء\b', 'أبناء'),
+            (r'\bالانصار\b', 'الأنصار'),
+            (r'\bاشارة\b', 'إشارة'),
+            (r'\bإقرأ\b', 'اقرأ'),
+            (r'\bإمتياز\b', 'امتياز'),
+            (r'\bارق\b', 'أرق'),
+            (r'\bاللة\b', 'الله'),
+            (r'\bإختبار\b', 'اختبار'),
+            (r'== ?روابط خارجية ?==', '== وصلات خارجية =='),
+            (r'\bارسال\b', 'إرسال'),
+            (r'\bإتصالات\b', 'اتصالات'),
+            (r'\bابو\b', 'أبو'),
+            (r'\bابا\b', 'أبا'),
+            (r'\bاخو\b', 'أخو'),
+            (r'\bاخا\b', 'أخا'),
+            (r'\bاخي\b', 'أخي'),
+            (r'\bاحد\b', 'أحد'),
+            (r'\bاربعاء\b', 'أربعاء'),
+            (r'\bاول\b', 'أول'),
+            (r'\b(ال|)اهم\b', r'\1أهم'),
+            (r'\b(ال|)اثقل\b', r'\1أثقل'),
+            (r'\b(ال|)امجد\b', r'\1أمجد'),
+            (r'\b(ال|)اوسط\b', r'\1أوسط'),
+            (r'\b(ال|)اشقر\b', r'\1أشقر'),
+            (r'\b(ال|)انور\b', r'\1أنور'),
+            (r'\b(ال|)اصعب\b', r'\1أصعب'),
+            (r'\b(ال|)اسهل\b', r'\1أسهل'),
+            (r'\b(ال|)اجمل\b', r'\1أجمل'),
+            (r'\b(ال|)اقبح\b', r'\1أقبح'),
+            (r'\b(ال|)اطول\b', r'\1أطول'),
+            (r'\b(ال|)اقصر\b', r'\1أقصر'),
+            (r'\b(ال|)اسمن\b', r'\1أسمن'),
+            (r'\b(ال|)اذكى\b', r'\1أذكى'),
+            (r'\b(ال|)اكثر\b', r'\1أكثر'),
+            (r'\b(ال|)افضل\b', r'\1أفضل'),
+            (r'\b(ال|)اكبر\b', r'\1أكبر'),
+            (r'\b(ال|)اشهر\b', r'\1أشهر'),
+            (r'\b(ال|)ابطأ\b', r'\1أبطأ'),
+            (r'\b(ال|)اماني\b', r'\1أماني'),
+            (r'\b(ال|)احلام\b', r'\1أحلام'),
+            (r'\b(ال|)اسماء\b', r'\1أسماء'),
+            (r'\b(ال|)اسامة\b', r'\1أسامة'),
+            (r'\bابراهيم\b', 'إبراهيم'),
+            (r'\bاسماعيل\b', 'إسماعيل'),
+            (r'\bايوب\b', 'أيوب'),
+            (r'\bايمن\b', 'أيمن'),
+            (r'\bاوزبكستان\b', 'أوزبكستان'),
+            (r'\bاذربيجان\b', 'أذربيجان'),
+            (r'\bافغانستان\b', 'أفغانستان'),
+            (r'\bانجلترا\b', 'إنجلترا'),
+            (r'\bايطاليا\b', 'إيطاليا'),
+            (r'\bاوربا\b', 'أوروبا'),
+            (r'\bأوربا\b', 'أوروبا'),
+            (r'\bاوغندة\b', 'أوغندة'),
+            (r'\b(ال|)ا(لماني|فريقي|سترالي)(ا|ة|تان|ان|ين|ي|ون|و|ات|)\b',
+             r'\1أ\2\3'),
+            (r'\b(ال|)ا(وروب|مريك)(ا|ي|ية|يتان|يان|يين|يي|يون|يو|يات|)\b',
+             r'\1أ\2\3'),
+            (r'\b(ال|)ا(ردن|رجنتين|وغند|سبان|وكران|فغان)'
+             r'(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)\b',
+             r'\1أ\2\3'),
+            (r'\b(ال|)ا(سرائيل|يران|مارات|نكليز|نجليز)'
+             r'(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)\b',
+             r'\1إ\2\3'),
+            (r'\b(ال|)(ا|أ)(رثوذكس|رثوذوكس)(ي|ية|يتان|يان|يين|يي|يون|يو|يات|)\b',
+             r'\1أرثوذكس\4'),
+            (r'\bإست(عمل|خدم|مر|مد|مال|عاض|قام|حال|جاب|قال|زاد|عان|طال)(ت|ا|وا|)\b',
+             r'است\1\2'),
+            (r'\bإست(حال|قال|طال|زاد|عان|قام|راح|جاب|عاض|مال)ة\b', r'است\1ة'),
         ],
         'exceptions': {
             'inside-tags': [
@@ -561,6 +537,7 @@ fixes = {
             ],
         }
     },
+    # TODO: Support dynamic replacement from Special pages to the localized one
     'specialpages': {
         'regex': False,
         'msg': {
@@ -650,10 +627,7 @@ fixes = {
     #
     'fckeditor': {
         'regex': True,
-        'msg': {
-            'en': u'Robot: Fixing rich-editor html',
-            'fa': u'ربات: تصحیح اچ‌تی‌ام‌ال ویرایشگر پیشرفته',
-        },
+        'msg': 'pywikibot-fixes-fckeditor',
         'replacements': [
             # replace <br> with a new line
             (r'(?i)<br>',                      r'\n'),
@@ -663,12 +637,21 @@ fixes = {
     },
 }
 
+
+def _load_file(filename):
+    """Load the fixes from the given filename."""
+    if os.path.exists(filename):
+        # load binary, to let compile decode it according to the file header
+        with open(filename, 'rb') as f:
+            exec(compile(f.read(), filename, 'exec'), globals())
+        return True
+    else:
+        return False
+
 #
 # Load the user fixes file.
-
-from pywikibot import config
-
-try:
-    exec(compile(open(config.datafilepath("user-fixes.py")).read(), config.datafilepath("user-fixes.py"), 'exec'))
-except IOError:
-    pass
+filename = config.datafilepath('user-fixes.py')
+if _load_file(filename):
+    user_fixes_loaded = True
+else:
+    user_fixes_loaded = False

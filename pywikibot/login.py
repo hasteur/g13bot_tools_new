@@ -3,18 +3,44 @@
 """Library to log the bot in to a wiki account."""
 #
 # (C) Rob W.W. Hooft, 2003
-# (C) Pywikibot team, 2003-2012
+# (C) Pywikibot team, 2003-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 import codecs
+import os
+import stat
+import webbrowser
+
+from warnings import warn
+
+try:
+    import mwoauth
+except ImportError as e:
+    mwoauth = e
 
 import pywikibot
+
 from pywikibot import config
-from pywikibot.tools import deprecated_args
 from pywikibot.exceptions import NoUsername
+from pywikibot.tools import deprecated_args, normalize_username
+
+
+class OAuthImpossible(ImportError):
+
+    """OAuth authentication is not possible on your system."""
+
+
+class _PasswordFileWarning(UserWarning):
+
+    """The format of password file is incorrect."""
+
+    pass
+
 
 _logger = "wiki.login"
 
@@ -31,7 +57,7 @@ botList = {
 }
 
 
-class LoginManager:
+class LoginManager(object):
 
     """Site login manager."""
 
@@ -44,11 +70,13 @@ class LoginManager:
 
         @param site: Site object to log into
         @type site: BaseSite
-        @param user: username to use
+        @param user: username to use.
+            If user is None, the username is loaded from config.usernames.
         @type user: basestring
         @param password: password to use
         @type password: basestring
-        @param sysop: login as sysop account
+        @param sysop: login as sysop account.
+            The sysop username is loaded from config.sysopnames.
         @type sysop: bool
 
         @raises NoUsername: No username is configured for the requested site.
@@ -88,6 +116,28 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
         self.password = password
         if getattr(config, 'password_file', ''):
             self.readPassword()
+
+    def check_user_exists(self):
+        """
+        Check that the username exists on the site.
+
+        @raises NoUsername: Username doesnt exist in user list.
+        """
+        try:
+            data = self.site.allusers(start=self.username, total=1)
+            user = next(iter(data))
+        except pywikibot.data.api.APIError as e:
+            if e.code == 'readapidenied':
+                pywikibot.warning('Could not check user %s exists on %s'
+                                  % (self.username, self.site))
+                return
+            else:
+                raise
+
+        if user['name'] != self.username:
+            # Report the same error as server error code NotExists
+            raise NoUsername('Username \'%s\' does not exist on %s'
+                             % (self.username, self.site))
 
     def botAllowed(self):
         """
@@ -155,8 +205,7 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
         to set a default password for an username. The last matching entry will
         be used, so default usernames should occur above specific usernames.
 
-        If the username or password contain non-ASCII characters, they
-        should be stored using the utf-8 encoding.
+        The file must be either encoded in ASCII or UTF-8.
 
         Example:
 
@@ -165,23 +214,40 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
         (u"wikipedia", u"my_wikipedia_user", u"my_wikipedia_pass")
         (u"en", u"wikipedia", u"my_en_wikipedia_user", u"my_en_wikipedia_pass")
         """
+        # We fix password file permission first,
+        # lift upper permission (regular file) from st_mode
+        # to compare it with private_files_permission.
+        if os.stat(config.password_file).st_mode - stat.S_IFREG \
+                != config.private_files_permission:
+            os.chmod(config.password_file, config.private_files_permission)
+
         password_f = codecs.open(config.password_file, encoding='utf-8')
-        for line in password_f:
+        for line_nr, line in enumerate(password_f):
             if not line.strip():
                 continue
-            entry = eval(line)
-            if len(entry) == 4:         # for userinfo included code and family
-                if entry[0] == self.site.code and \
-                   entry[1] == self.site.family.name and \
-                   entry[2] == self.username:
-                    self.password = entry[3]
-            elif len(entry) == 3:       # for userinfo included family
-                if entry[0] == self.site.family.name and \
-                   entry[1] == self.username:
-                    self.password = entry[2]
-            elif len(entry) == 2:       # for default userinfo
-                if entry[0] == self.username:
-                    self.password = entry[1]
+            try:
+                entry = eval(line)
+            except SyntaxError:
+                entry = None
+            if type(entry) is not tuple:
+                warn('Invalid tuple in line {0}'.format(line_nr),
+                     _PasswordFileWarning)
+                continue
+            if not 2 <= len(entry) <= 4:
+                warn('The length of tuple in line {0} should be 2 to 4 ({1} '
+                     'given)'.format(line_nr, entry), _PasswordFileWarning)
+                continue
+
+            # When the tuple is inverted the default family and code can be
+            # easily appended which makes the next condition easier as it does
+            # not need to know if it's using the default value or not.
+            entry = list(entry[::-1]) + [self.site.family.name,
+                                         self.site.code][len(entry) - 2:]
+
+            if (normalize_username(entry[1]) == self.username and
+                    entry[2] == self.site.family.name and
+                    entry[3] == self.site.code):
+                self.password = entry[0]
         password_f.close()
 
     def login(self, retry=False):
@@ -194,6 +260,10 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
         @raises NoUsername: Username is not recognised by the site.
         """
         if not self.password:
+            # First check that the username exists,
+            # to avoid asking for a password that will not work.
+            self.check_user_exists()
+
             # As we don't want the password to appear on the screen, we set
             # password = True
             self.password = pywikibot.input(
@@ -213,7 +283,7 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
             elif e.code == 'Illegal':
                 raise NoUsername(u"Username '%s' is invalid on %s"
                                  % (self.username, self.site))
-            # TODO: investigate other unhandled API codes (bug 73539)
+            # TODO: investigate other unhandled API codes (bug T75539)
             if retry:
                 self.password = None
                 return self.login(retry=True)
@@ -235,4 +305,121 @@ usernames['%(fam_name)s']['%(wiki_code)s'] = 'myUsername'"""
         return True
 
     def showCaptchaWindow(self, url):
+        """Open a window to show the captcha for the given URL."""
         pass
+
+
+class OauthLoginManager(LoginManager):
+
+    """Site login manager using OAuth."""
+
+    # NOTE: Currently OauthLoginManager use mwoauth directly to complete OAuth
+    # authentication process
+
+    def __init__(self, password=None, sysop=False, site=None, user=None):
+        """
+        Constructor.
+
+        All parameters default to defaults in user-config.
+
+        @param site: Site object to log into
+        @type site: BaseSite
+        @param user: consumer key
+        @type user: basestring
+        @param password: consumer secret
+        @type password: basestring
+        @param sysop: login as sysop account.
+            The sysop username is loaded from config.sysopnames.
+        @type sysop: bool
+
+        @raises NoUsername: No username is configured for the requested site.
+        @raises OAuthImpossible: mwoauth isn't installed
+        """
+        if isinstance(mwoauth, ImportError):
+            raise OAuthImpossible('mwoauth is not installed: %s.' % mwoauth)
+        assert password is not None and user is not None
+        assert sysop is False
+        super(OauthLoginManager, self).__init__(None, False, site, None)
+        if self.password:
+            pywikibot.warn('Password exists in password file for %s:%s.'
+                           'Password is unnecessary and should be removed '
+                           'when OAuth enabled.' % (self.site, self.username))
+        self._consumer_token = (user, password)
+        self._access_token = None
+
+    def login(self, retry=False, force=False):
+        """
+        Attempt to log into the server.
+
+        @param retry: infinitely retry if exception occurs during authentication.
+        @type retry: bool
+        @param force: force to re-authenticate
+        @type force: bool
+        """
+        if self.access_token is None or force:
+            pywikibot.output('Logging in to %(site)s via OAuth consumer %(key)s'
+                             % {'key': self.consumer_token[0],
+                                'site': self.site})
+            consumer_token = mwoauth.ConsumerToken(self.consumer_token[0],
+                                                   self.consumer_token[1])
+            handshaker = mwoauth.Handshaker(
+                self.site.base_url(self.site.path()), consumer_token)
+            try:
+                redirect, request_token = handshaker.initiate()
+                pywikibot.stdout('Authenticate via web browser..')
+                webbrowser.open(redirect)
+                pywikibot.stdout('If your web browser does not open '
+                                 'automatically, please point it to: %s'
+                                 % redirect)
+                request_qs = pywikibot.input('Response query string: ')
+                access_token = handshaker.complete(request_token,
+                                                   request_qs)
+                self._access_token = (access_token.key, access_token.secret)
+            except Exception as e:
+                pywikibot.error(e)
+                if retry:
+                    self.login(retry=True, force=force)
+        else:
+            pywikibot.output('Logged in to %(site)s via consumer %(key)s'
+                             % {'key': self.consumer_token[0],
+                                'site': self.site})
+
+    @property
+    def consumer_token(self):
+        """
+        OAuth consumer key token and secret token.
+
+        @rtype: tuple of two str
+        """
+        return self._consumer_token
+
+    @property
+    def access_token(self):
+        """
+        OAuth access key token and secret token.
+
+        @rtype: tuple of two str
+        """
+        return self._access_token
+
+    @property
+    def identity(self):
+        """
+        Get identifying information about a user via an authorized token.
+
+        @rtype: None or dict
+        """
+        if self.access_token is None:
+            pywikibot.error('Access token not set')
+            return None
+        consumer_token = mwoauth.ConsumerToken(self.consumer_token[0],
+                                               self.consumer_token[1])
+        access_token = mwoauth.AccessToken(self.access_token[0],
+                                           self.access_token[1])
+        try:
+            identity = mwoauth.identify(self.site.base_url(self.site.path()),
+                                        consumer_token, access_token)
+            return identity
+        except Exception as e:
+            pywikibot.error(e)
+            return None

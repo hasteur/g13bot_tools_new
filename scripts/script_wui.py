@@ -18,7 +18,8 @@ The following parameters are supported:
 All other parameters will be ignored.
 
 Syntax example:
-    python script_wui.py -dir:.
+
+    python pwb.py script_wui -dir:.
         Default operating mode.
 """
 #  @package script_wui
@@ -44,13 +45,13 @@ Syntax example:
 #        [ shell (rev-id) -> output mit shell rev-id ]
 #        [ shell rev-id (als eindeutige job/task-config bzw. script) -> crontab ]
 #  @todo Bei jeder Botbearbeitung wird der Name des Auftraggebers vermerkt
-#  @todo (may be queue_security needed later in order to allow other 'super-users' too...)
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 #  Writing code in Wikipedia:
 #
 #  # patches to keep code running
 #  builtin_raw_input = __builtin__.raw_input
-#  __builtin__.raw_input = lambda: 'n'     # overwrite 'raw_input' to run bot non-blocking and simulation mode
+#  # overwrite 'raw_input' to run bot non-blocking and simulation mode
+#  __builtin__.raw_input = lambda: 'n'
 #
 #  # backup sys.argv; depreciated: if possible manipulate pywikibot.config instead
 #  sys_argv = copy.deepcopy( sys.argv )
@@ -58,24 +59,29 @@ Syntax example:
 #  ...
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-
 import datetime
-import threading
-import sys
-import os
-import traceback
 import gc
-import resource
+import logging
+import os
 import re
+import resource
+import sys
+import threading
+import traceback
+
+from io import StringIO
 
 # https://labix.org/lunatic-python is bit-rotting, and there are maintained
 # versions on github:
 # https://github.com/bastibe/lunatic-python.git
 # https://github.com/AlereDevices/lunatic-python.git
 import lua
+
 # The crontab package is https://github.com/josiahcarlson/parse-crontab
 # version 0.20 installs a package called 'tests' which conflicts with our
 # test suite.  The patch to fix this has been merged, but is not released.
@@ -86,28 +92,25 @@ import pywikibot
 # pywikibot.botirc depends on https://pypi.python.org/pypi/irc
 import pywikibot.botirc
 
+from pywikibot.tools.formatter import color_format
+
 if sys.version_info[0] > 2:
     import _thread as thread
 else:
-    import thread
+    import thread  # flake8: disable=H237 (module does not exist in Python 3)
 
 
 bot_config = {
     'BotName': pywikibot.config.usernames[pywikibot.config.family][pywikibot.config.mylang],
 
     # protected !!! ('CSS' or other semi-protected page is essential here)
-    'ConfCSSshell': u'User:DrTrigon/DrTrigonBot/script_wui-shell.css',    # u'User:DrTrigonBot/Simon sagt' ?
+    'ConfCSSshell': 'User:DrTrigon/DrTrigonBot/script_wui-shell.css',
     'ConfCSScrontab': u'User:DrTrigon/DrTrigonBot/script_wui-crontab.css',
 
     # (may be protected but not that important... 'CSS' is not needed here !!!)
     'ConfCSSoutput': u'User:DrTrigonBot/Simulation',
 
     'CRONMaxDelay': 5 * 60.0,       # check all ~5 minutes
-#    'queue_security':       ([u'DrTrigon', u'DrTrigonBot'], u'Bot: exec'),
-#    'queue_security':       ([u'DrTrigon'], u'Bot: exec'),
-
-    # supported and allowed bot scripts
-    # (at the moment all)
 
     # forbidden parameters
     # (at the moment none, but consider e.g. '-always' or allow it with '-simulate' only!)
@@ -122,7 +125,9 @@ class ScriptWUIBot(pywikibot.botirc.IRCBot):
     """WikiUserInterface bot."""
 
     def __init__(self, *arg):
-        pywikibot.output(u'\03{lightgreen}* Initialization of bot\03{default}')
+        """Constructor."""
+        pywikibot.output(color_format(
+            '{lightgreen}* Initialization of bot{default}'))
 
         pywikibot.botirc.IRCBot.__init__(self, *arg)
 
@@ -142,7 +147,8 @@ class ScriptWUIBot(pywikibot.botirc.IRCBot):
         self.templ = templ.title()
         self.cron = cron.title()
         self.refs = {self.templ: templ,
-                     self.cron:  cron, }
+                     self.cron: cron,
+                     }
         pywikibot.output(u'** Pre-loading all relevant page contents')
         for item in self.refs:
             # security; first check if page is protected, reject any data if not
@@ -192,7 +198,9 @@ class ScriptWUIBot(pywikibot.botirc.IRCBot):
             # (date supported only, thus [min] and [hour] dropped)
             entry = crontab.CronTab(timestmp)
             # find the delay from current minute (does not return 0.0 - but next)
-            delay = entry.next(datetime.datetime.now().replace(second=0, microsecond=0) - datetime.timedelta(microseconds=1))
+            now = datetime.datetime.now().replace(second=0, microsecond=0)
+            delay = entry.next(
+                now - datetime.timedelta(microseconds=1))
 
             if (delay <= bot_config['CRONMaxDelay']):
                 pywikibot.output(u"CRONTAB: %s / %s / %s" % (page, rev, timestmp))
@@ -216,9 +224,6 @@ class ScriptWUIBot(pywikibot.botirc.IRCBot):
 def main_script(page, rev=None, params=NotImplemented):  # pylint: disable=unused-argument
     """Main thread."""
     # http://opensourcehacker.com/2011/02/23/temporarily-capturing-python-logging-output-to-a-string-buffer/
-    # https://docs.python.org/release/2.6/library/logging.html
-    from io import StringIO
-    import logging
 
     # safety; default mode is safe (no writing)
     pywikibot.config.simulate = True
@@ -262,7 +267,11 @@ def main_script(page, rev=None, params=NotImplemented):  # pylint: disable=unuse
     pywikibot.config.simulate = __simulate
     sys.argv = __sys_argv
 
-    pywikibot.output(u'environment: garbage; %s / memory; %s / members; %s' % (gc.collect(), resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * resource.getpagesize(), len(dir())))
+    pywikibot.output(
+        u'environment: garbage; %s / memory; %s / members; %s' % (
+            gc.collect(),
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * resource.getpagesize(),
+            len(dir())))
     # 'len(dir())' is equivalent to 'len(inspect.getmembers(__main__))'
 
     # append result to output page
@@ -276,14 +285,16 @@ def wiki_logger(buffer, page, rev=None):
     # (might be a problem here for TS and SGE, output string has another encoding)
     if False:
         buffer = buffer.decode(pywikibot.config.console_encoding)
-    buffer = re.sub("\03\{(.*?)\}(.*?)\03\{default\}", "\g<2>", buffer)
+    buffer = re.sub(r'\03\{(.*?)\}(.*?)\03\{default\}', r'\g<2>', buffer)
     if rev is None:
         rev = page.latestRevision()
         link = page.permalink(oldid=rev)
     # append to page
     outpage = pywikibot.Page(pywikibot.Site(), bot_config['ConfCSSoutput'])
     text = outpage.get()
-    outpage.put(text + u"\n== Simulation vom %s mit [%s code:%s] ==\n<pre>\n%s</pre>\n\n" % (pywikibot.Timestamp.now().isoformat(' '), link, rev, buffer))
+    outpage.put(
+        text + u"\n== Simulation vom %s mit [%s code:%s] ==\n<pre>\n%s</pre>\n\n"
+        % (pywikibot.Timestamp.now().isoformat(' '), link, rev, buffer))
 #                comment = pywikibot.translate(self.site.lang, bot_config['msg']))
 
 
@@ -298,16 +309,17 @@ def main(*args):
     """
     global __simulate, __sys_argv
 
-    for arg in pywikibot.handle_args(args):
-        pywikibot.showHelp('script_wui')
-        return
+    unknown_args = pywikibot.handle_args(args)
+    if unknown_args:
+        pywikibot.bot.suggest_help(unknown_parameters=unknown_args)
+        return False
 
     __simulate = pywikibot.config.simulate
     __sys_argv = sys.argv
 
     site = pywikibot.Site()
     site.login()
-    chan = '#' + site.language() + '.' + site.family.name
+    chan = '#' + site.code + '.' + site.family.name
     bot = ScriptWUIBot(site, chan, site.user() + "_WUI", "irc.wikimedia.org")
     try:
         bot.start()

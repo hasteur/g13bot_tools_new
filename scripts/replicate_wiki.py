@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # -*- coding: utf-8  -*-
 """
 This bot replicates pages in a wiki to a second wiki within one family.
 
 Example:
-python replicate_wiki.py [-r] -ns 10 -f wikipedia -o nl li fy
+
+    python pwb.py replicate_wiki [-r] -ns 10 -f wikipedia -o nl li fy
 
 to copy all templates from an nlwiki to liwiki and fywiki. It will show which
 pages have to be changed if -r is not present, and will only actually write
@@ -41,20 +42,25 @@ destination_wiki  destination wiki(s)
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import sys
 
+from argparse import ArgumentParser
+
 import pywikibot
+
 from pywikibot import config, Page
+from pywikibot.tools import deprecated
 
 
+@deprecated('BaseSite.namespaces')
 def namespaces(site):
-    """dict from namespace number to prefix."""
-    ns = dict((site.getNamespaceIndex(n), n) for n in site.namespaces())
-    ns[0] = ''
-    return ns
+    """Return a dictionary from namespace number to prefix."""
+    return dict((n.id, n.custom_name) for n in site.namespaces)
 
 
 def multiple_replace(text, word_dict):
@@ -64,11 +70,12 @@ def multiple_replace(text, word_dict):
     return text
 
 
-class SyncSites:
+class SyncSites(object):
 
     """Work is done in here."""
 
     def __init__(self, options):
+        """Constructor."""
         self.options = options
 
         if options.original_wiki:
@@ -86,9 +93,8 @@ class SyncSites:
         self.original.login()
 
         if options.namespace and 'help' in options.namespace:
-            nsd = namespaces(self.original)
-            for k in nsd:
-                pywikibot.output('%s %s' % (k, nsd[k]))
+            for namespace in self.original.namespaces.values():
+                pywikibot.output('%s %s' % (namespace.id, namespace.custom_name))
             sys.exit()
 
         self.sites = [pywikibot.Site(s, family) for s in sites]
@@ -179,6 +185,7 @@ class SyncSites:
             sync_overview_page.save(self.put_message(site))
 
     def put_message(self, site):
+        """Return synchonization message."""
         return ('%s replicate_wiki.py synchronization from %s'
                 % (site.user(), str(self.original)))
 
@@ -189,18 +196,19 @@ class SyncSites:
         page1 = Page(self.original, pagename)
         txt1 = page1.text
 
-        for site in self.sites:
-            if self.options.dest_namespace:
-                prefix = namespaces(site)[int(self.options.dest_namespace)]
-                if prefix:
-                    prefix += ':'
-                new_pagename = prefix + page1.titleWithoutNamespace()
-                pywikibot.output("\nCross namespace, new title: %s"
-                                 % new_pagename)
-            else:
-                new_pagename = pagename
+        if self.options.dest_namespace:
+            dest_ns = int(self.options.dest_namespace)
+        else:
+            dest_ns = None
 
-            page2 = Page(site, new_pagename)
+        for site in self.sites:
+            if dest_ns is not None:
+                page2 = Page(site, page1.title(withNamespace=False), dest_ns)
+                pywikibot.output("\nCross namespace, new title: %s"
+                                 % page2.title())
+            else:
+                page2 = Page(site, pagename)
+
             if page2.exists():
                 txt2 = page2.text
             else:
@@ -228,8 +236,14 @@ class SyncSites:
 
 
 def main(*args):
-    from argparse import ArgumentParser
+    """
+    Process command line arguments and invoke bot.
 
+    If args is an empty list, sys.argv is used.
+
+    @param args: command line arguments
+    @type args: list of unicode
+    """
     my_args = pywikibot.handle_args(args)
 
     parser = ArgumentParser(add_help=False)

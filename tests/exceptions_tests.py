@@ -1,10 +1,12 @@
 # -*- coding: utf-8  -*-
 """Tests for exceptions."""
 #
-# (C) Pywikibot team, 2014
+# (C) Pywikibot team, 2014-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import pywikibot
@@ -20,23 +22,34 @@ class TestDeprecatedExceptions(DeprecationTestCase):
 
     def test_UploadWarning(self):
         """Test exceptions.UploadWarning is deprecated only."""
-        # Accessing from the main package should work fine.
+        # Accessing from the main package should be deprecated.
         cls = pywikibot.UploadWarning
-        self.assertNoDeprecation()
+
+        self.assertOneDeprecationParts('pywikibot.UploadWarning',
+                                       'APISite.upload with a warning handler')
+
         e = cls('foo', 'bar')
         self.assertIsInstance(e, pywikibot.Error)
         self.assertNoDeprecation()
 
         self._reset_messages()
 
-        # But it sholdnt be accessed from the exceptions module.
+        # And it should not be accessed from the exceptions module either.
+        # The first access loads the symbol
         cls = pywikibot.exceptions.UploadWarning
 
-        self.assertDeprecation(
-            'pywikibot.exceptions.UploadWarning is DEPRECATED, '
-            'use pywikibot.data.api.UploadWarning instead.')
+        self.assertOneDeprecationParts('pywikibot.exceptions.UploadWarning',
+                                       'APISite.upload with a warning handler')
 
-        self._reset_messages()
+        e = cls('foo', 'bar')
+        self.assertIsInstance(e, pywikibot.Error)
+        self.assertNoDeprecation()
+
+        # Check this again because the second time it should be cached
+        cls = pywikibot.exceptions.UploadWarning
+
+        self.assertOneDeprecationParts('pywikibot.exceptions.UploadWarning',
+                                       'APISite.upload with a warning handler')
 
         e = cls('foo', 'bar')
         self.assertIsInstance(e, pywikibot.Error)
@@ -45,31 +58,25 @@ class TestDeprecatedExceptions(DeprecationTestCase):
     def test_PageNotFound(self):
         """Test PageNotFound is deprecated from the package."""
         cls = pywikibot.PageNotFound
-        self.assertDeprecation(
+        self.assertOneDeprecation(
             'pywikibot.PageNotFound is deprecated, and no longer '
             'used by pywikibot; use http.fetch() instead.')
 
-        self._reset_messages()
-
         e = cls('foo')
         self.assertIsInstance(e, pywikibot.Error)
-        self.assertDeprecation(
-            'pywikibot.exceptions.DeprecatedPageNotFoundError is deprecated.')
-
-        self._reset_messages()
+        self.assertOneDeprecationParts(
+            'pywikibot.exceptions.DeprecatedPageNotFoundError')
 
         cls = pywikibot.exceptions.PageNotFound
 
-        self.assertDeprecation(
+        self.assertOneDeprecation(
             'pywikibot.exceptions.PageNotFound is deprecated, and no longer '
             'used by pywikibot; use http.fetch() instead.')
 
-        self._reset_messages()
-
         e = cls('foo')
         self.assertIsInstance(e, pywikibot.Error)
-        self.assertDeprecation(
-            'pywikibot.exceptions.DeprecatedPageNotFoundError is deprecated.')
+        self.assertOneDeprecationParts(
+            'pywikibot.exceptions.DeprecatedPageNotFoundError')
 
 
 if __name__ == '__main__':

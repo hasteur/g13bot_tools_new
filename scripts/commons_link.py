@@ -10,7 +10,9 @@ an article in Commons will not be in English but with
 redirect, this also functions.
 
 Run:
-Syntax: python commons_link.py [action] [pagegenerator]
+Syntax:
+
+    python pwb.py commons_link [action] [pagegenerator]
 
 where action can be one of these:
  * pages      : Run over articles, include {{commons}}
@@ -29,12 +31,14 @@ and pagegenerator can be one of these:
 # Ported by Geoffrey "GEOFBOT" Mon for Google Code-In 2013
 # User:Sn1per
 #
-
+from __future__ import absolute_import, unicode_literals
 
 __version__ = '$Id$'
 
 import re
+
 import pywikibot
+
 from pywikibot import textlib, pagegenerators, i18n, Bot
 
 docuReplacements = {
@@ -47,6 +51,7 @@ class CommonsLinkBot(Bot):
     """Commons linking bot."""
 
     def __init__(self, generator, **kwargs):
+        """Constructor."""
         self.availableOptions.update({
             'action': None,
         })
@@ -58,6 +63,7 @@ class CommonsLinkBot(Bot):
         self.findTemplate3 = re.compile(r'\{\{[Cc]ommons')
 
     def run(self):
+        """Run the bot."""
         if not all((self.getOption('action'), self.generator)):
             return
         catmode = (self.getOption('action') == 'categories')
@@ -91,7 +97,7 @@ class CommonsLinkBot(Bot):
                                                        'commons_link%s-template-added'
                                                        % ('', '-cat')[catmode])
                             try:
-                                self.userPut(page, oldText, text, comment=comment)
+                                self.userPut(page, oldText, text, summary=comment)
                             except pywikibot.EditConflict:
                                 pywikibot.output(
                                     u'Skipping %s because of edit conflict'
@@ -132,14 +138,16 @@ def main(*args):
         else:
             genFactory.handleArg(arg)
 
-    if 'action' in options:
-        gen = genFactory.getCombinedGenerator()
-        if gen:
-            gen = pagegenerators.PreloadingGenerator(gen)
-            bot = CommonsLinkBot(gen, **options)
-            bot.run()
-            return
-    pywikibot.showHelp()
+    gen = genFactory.getCombinedGenerator()
+    if 'action' in options and gen:
+        gen = pagegenerators.PreloadingGenerator(gen)
+        bot = CommonsLinkBot(gen, **options)
+        bot.run()
+        return True
+
+    pywikibot.bot.suggest_help(missing_action='action' not in options,
+                               missing_generator=not gen)
+    return False
 
 
 if __name__ == "__main__":

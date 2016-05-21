@@ -1,9 +1,10 @@
 # -*- coding: utf-8  -*-
 """Objects representing WikiStats API."""
 #
-# (C) Pywikibot team, 2014
+# (C) Pywikibot team, 2014-2016
 #
 # Distributed under the terms of the MIT license.
+from __future__ import absolute_import, unicode_literals
 
 import sys
 
@@ -13,6 +14,7 @@ import pywikibot
 
 if sys.version_info[0] > 2:
     import csv
+    unicode = str
 else:
     try:
         import unicodecsv as csv
@@ -22,7 +24,7 @@ else:
             ' falling back to using the larger XML datasets.')
         csv = None
 
-from pywikibot.comms import threadedhttp
+from pywikibot.comms import http
 
 
 class WikiStats(object):
@@ -36,10 +38,10 @@ class WikiStats(object):
 
     FAMILY_MAPPING = {
         'anarchopedia': 'anarchopedias',
-        'wikipedia':    'wikipedias',
-        'wikiquote':    'wikiquotes',
-        'wikisource':   'wikisources',
-        'wiktionary':   'wiktionaries',
+        'wikipedia': 'wikipedias',
+        'wikiquote': 'wikiquotes',
+        'wikisource': 'wikisources',
+        'wiktionary': 'wiktionaries',
     }
 
     MISC_SITES_TABLE = 'mediawikis'
@@ -110,11 +112,8 @@ class WikiStats(object):
         if table in self.FAMILY_MAPPING:
             table = self.FAMILY_MAPPING[table]
 
-        o = threadedhttp.Http()
-        r = o.request(uri=URL % (table, format))
-        if isinstance(r, Exception):
-            raise r
-        return r[1]
+        r = http.fetch(URL % (table, format))
+        return r.raw
 
     def raw_cached(self, table, format):
         """
@@ -186,7 +185,7 @@ class WikiStats(object):
             site = {}
 
             for field in row.findall('field'):
-                site[field.get('name')] = field.text
+                site[field.get('name')] = unicode(field.text)
 
             data.append(site)
 
@@ -235,6 +234,6 @@ class WikiStats(object):
                       reverse=True)
 
     def languages_by_size(self, table):
-        """ Return ordered list of languages by size from WikiStats. """
+        """Return ordered list of languages by size from WikiStats."""
         # This assumes they appear in order of size in the WikiStats dump.
         return [d['prefix'] for d in self.get(table)]

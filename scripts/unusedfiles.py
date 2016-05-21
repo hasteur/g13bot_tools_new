@@ -8,43 +8,30 @@ Parameters:
 -always     Don't be asked every time.
 
 """
-
 #
 # (C) Leonardo Gregianin, 2007
 # (C) Filnik, 2008
 # (c) xqt, 2011-2014
-# (C) Pywikibot team, 2014
+# (C) Pywikibot team, 2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import pywikibot
 from pywikibot import i18n, pagegenerators, Bot
 
-comment = {
-    'ar': u'صور للاستبعاد',
-    'en': u'images for elimination',
-    'fa': u'تصویر استفاده نشده',
-    'he': u'תמונות להסרה',
-    'it': u'Bot: segnalo immagine orfana da eliminare',
-    'pt': u'Bot: marcação de imagens para eliminação',
-}
-
 template_to_the_image = {
-    'en': u'{{subst:No-use2}}',
     'it': u'{{immagine orfana}}',
     'fa': u'{{تصاویر بدون استفاده}}',
 }
+
+# This template message should use subst:
 template_to_the_user = {
-    'en': u'\n\n{{img-sem-uso|%(title)s}}',
     'fa': u'\n\n{{جا:اخطار به کاربر برای تصاویر بدون استفاده|%(title)s}}--~~~~',
-    'it': u'\n\n{{Utente:Filbot/Immagine orfana}}',
-}
-except_text = {
-    'en': u'<table id="mw_metadata" class="mw_metadata">',
-    'it': u'<table id="mw_metadata" class="mw_metadata">',
 }
 
 
@@ -53,29 +40,30 @@ class UnusedFilesBot(Bot):
     """Unused files bot."""
 
     def __init__(self, site, **kwargs):
+        """Constructor."""
         super(UnusedFilesBot, self).__init__(**kwargs)
         self.site = site
 
     def run(self):
+        """Start the bot."""
         template_image = i18n.translate(self.site,
                                         template_to_the_image)
         template_user = i18n.translate(self.site,
                                        template_to_the_user)
-        except_text_translated = i18n.translate(self.site, except_text)
-        summary = i18n.translate(self.site, comment, fallback=True)
-        if not all([template_image, template_user, except_text_translated, comment]):
+        self.summary = i18n.twtranslate(self.site, 'unusedfiles-comment')
+        if not all([template_image, template_user]):
             raise pywikibot.Error(u'This script is not localized for %s site.'
                                   % self.site)
-        self.summary = summary
         generator = pagegenerators.UnusedFilesGenerator(site=self.site)
         generator = pagegenerators.PreloadingGenerator(generator)
         for image in generator:
             if not image.exists():
-                pywikibot.output(u"File '%s' does not exist (see bug 69133)."
+                pywikibot.output("File '%s' does not exist (see bug T71133)."
                                  % image.title())
                 continue
-            if (except_text_translated.encode('utf-8')
-                    not in image.getImagePageHtml() and
+            # Use fileUrl() and fileIsShared() to confirm it is local media
+            # rather than a local page with the same name as shared media.
+            if (image.fileUrl() and not image.fileIsShared() and
                     u'http://' not in image.text):
                 if template_image in image.text:
                     pywikibot.output(u"%s done already"
@@ -89,6 +77,7 @@ class UnusedFilesBot(Bot):
                 self.append_text(usertalkpage, msg2uploader)
 
     def append_text(self, page, apptext):
+        """Append apptext to the page."""
         if page.isRedirectPage():
             page = page.getRedirectTarget()
         if page.exists():
@@ -97,11 +86,11 @@ class UnusedFilesBot(Bot):
             if page.isTalkPage():
                 text = u''
             else:
-                raise pywikibot.NoPage(u"Page '%s' does not exist" % page.title())
+                raise pywikibot.NoPage(page)
 
         oldtext = text
         text += apptext
-        self.userPut(page, oldtext, text, comment=self.summary)
+        self.userPut(page, oldtext, text, summary=self.summary)
 
 
 def main(*args):
@@ -123,8 +112,10 @@ def main(*args):
     try:
         bot.run()
     except pywikibot.Error as e:
-        pywikibot.showHelp()
-        pywikibot.warning(e)
+        pywikibot.bot.suggest_help(exception=e)
+        return False
+    else:
+        return True
 
 
 if __name__ == "__main__":

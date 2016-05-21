@@ -13,13 +13,14 @@ The script takes a single parameter:
 -filename: the filename to read the freebase-wikidata mappings from;
            default: fb2w.nt.gz
 """
-
 #
 # (C) Denny Vrandecic, 2013
 # (C) Pywikibot team, 2013-2014
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
@@ -30,11 +31,12 @@ import sys
 import pywikibot
 
 
-class FreebaseMapperRobot:
+class FreebaseMapperRobot(object):
 
     """Freebase Mapping bot."""
 
     def __init__(self, filename):
+        """Constructor."""
         self.repo = pywikibot.Site('wikidata', 'wikidata').data_repository()
         self.filename = filename
         if not os.path.exists(self.filename):
@@ -43,6 +45,7 @@ class FreebaseMapperRobot:
             sys.exit(1)
 
     def run(self):
+        """Run the bot."""
         # Set up some items we will use a lot.
         self.claim = pywikibot.Claim(self.repo, 'P646')  # freebase mapping
         # And sources!
@@ -57,6 +60,7 @@ class FreebaseMapperRobot:
             self.processLine(line.strip())
 
     def processLine(self, line):
+        """Process a single line."""
         if not line or line.startswith('#'):
             return
         mid, sameas, qid, dot = line.split()

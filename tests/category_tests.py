@@ -1,10 +1,12 @@
 # -*- coding: utf-8  -*-
 """Tests for the Category class."""
 #
-# (C) Pywikibot team, 2008-2014
+# (C) Pywikibot team, 2014-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import pywikibot
@@ -132,6 +134,23 @@ class TestCategoryObject(TestCase):
         articles_total = list(cat.articles(total=2))
         self.assertEqual(len(articles_total), 2)
 
+    def test_redirects(self):
+        """Test the redirects method."""
+        site = self.get_site()
+        cat1 = pywikibot.Category(site, 'Category:Fonts')
+        cat2 = pywikibot.Category(site, 'Category:Typefaces')
+
+        self.assertTrue(cat1.isCategoryRedirect())
+        self.assertFalse(cat2.isCategoryRedirect())
+
+        # The correct target category if fetched.
+        tgt = cat1.getCategoryRedirectTarget()
+        self.assertEqual(tgt, cat2)
+
+        # Raise exception if target is fetched for non Category redirects.
+        self.assertRaises(pywikibot.IsNotRedirectPage,
+                          cat2.getCategoryRedirectTarget)
+
 
 class TestCategoryDryObject(TestCase):
 
@@ -190,6 +209,28 @@ class TestCategoryDryObject(TestCase):
         cat = pywikibot.Category(site, 'Category:Wikipedia categories', 'Example')
         self.assertEqual(cat.aslink(), '[[Category:Wikipedia categories|Example]]')
         self.assertEqual(cat.aslink(sortKey='Foo'), '[[Category:Wikipedia categories|Foo]]')
+
+
+class CategoryNewestPages(TestCase):
+
+    """Test newest_pages feature on French Wikinews."""
+
+    family = 'wikinews'
+    code = 'fr'
+
+    cached = True
+
+    def test_newest_pages(self):
+        """Test that the pages are getting older."""
+        cat = pywikibot.Category(self.get_site(), u'Catégorie:Yukon Quest 2015')
+        last = pywikibot.Timestamp.max
+        count = 0
+        for page in cat.newest_pages():
+            creation_stamp = page.oldest_revision.timestamp
+            self.assertLessEqual(creation_stamp, last)
+            last = creation_stamp
+            count += 1
+        self.assertEqual(count, cat.categoryinfo['size'])
 
 
 if __name__ == '__main__':

@@ -2,82 +2,31 @@
 # -*- coding: utf-8  -*-
 """Bot to find all pages on the wiki with mixed latin and cyrilic alphabets."""
 #
-# (C) Pywikibot team, 2006-2014
+# (C) Pywikibot team, 2006-2016
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import print_function
+from __future__ import absolute_import, print_function, unicode_literals
 __version__ = '$Id$'
 
-import os
-import sys
-import re
 import codecs
+import itertools
+import os
+import re
+from string import ascii_letters
+import sys
+
 import pywikibot
+
 from pywikibot import i18n
+
 from pywikibot.data import api
+from pywikibot.tools import first_lower, first_upper, formatter
+
+from scripts.category import CategoryMoveRobot as CategoryMoveBot
 
 if sys.version_info[0] > 2:
     xrange = range
-
-
-#
-# Permutations code was taken from
-# https://code.activestate.com/recipes/190465/
-#
-def xuniqueCombinations(items, n):
-    if n == 0:
-        yield []
-    else:
-        for i in xrange(len(items)):
-            for cc in xuniqueCombinations(items[i + 1:], n - 1):
-                yield [items[i]] + cc
-# End of permutation code
-#
-
-#
-# Windows Concole colors
-# This code makes this script Windows ONLY!!!
-# Feel free to adapt it to another platform
-#
-# Adapted from https://code.activestate.com/recipes/496901/
-#
-STD_OUTPUT_HANDLE = -11
-
-FOREGROUND_BLUE = 0x01  # text color contains blue.
-FOREGROUND_GREEN = 0x02  # text color contains green.
-FOREGROUND_RED = 0x04  # text color contains red.
-FOREGROUND_INTENSITY = 0x08  # text color is intensified.
-BACKGROUND_BLUE = 0x10  # background color contains blue.
-BACKGROUND_GREEN = 0x20  # background color contains green.
-BACKGROUND_RED = 0x40  # background color contains red.
-BACKGROUND_INTENSITY = 0x80  # background color is intensified.
-
-FOREGROUND_WHITE = FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED
-
-try:
-    import ctypes
-    std_out_handle = ctypes.windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-except:
-    std_out_handle = None
-
-
-def SetColor(color):
-    if std_out_handle:
-        try:
-            return ctypes.windll.kernel32.SetConsoleTextAttribute(
-                std_out_handle, color)
-        except:
-            pass
-
-    if color == FOREGROUND_BLUE:
-        print('(b:', end=' ')
-    if color == FOREGROUND_GREEN:
-        print('(g:', end=' ')
-    if color == FOREGROUND_RED:
-        print('(r:', end=' ')
-
-# end of console code
 
 
 class CaseChecker(object):
@@ -101,7 +50,7 @@ class CaseChecker(object):
     localKeyboard = u'йцукенгшщзфывапролдячсмить'
     latinKeyboard = u'qwertyuiopasdfghjklzxcvbnm'
 
-    romanNumChars = u'IVXLMC'
+    romanNumChars = u'IVXLCDM'
     # all letters that may be used as suffixes after roman numbers:  "Iый"
     romannumSuffixes = localLowerLtr
     romanNumSfxPtrn = re.compile(
@@ -111,13 +60,15 @@ class CaseChecker(object):
         'ru': u'ВП:КЛ/Проверенные',
     }
 
-    latLtr = u'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-
     lclClrFnt = u'<font color=green>'
     latClrFnt = u'<font color=brown>'
     suffixClr = u'</font>'
 
-    wordBreaker = re.compile(u'[ _\-/\|#[\]():]')
+    colorFormatLocalColor = '{green}'
+    colorFormatLatinColor = '{red}'
+    colorFormatSuffix = '{default}'
+
+    wordBreaker = re.compile(r'[ _\-/\|#[\]():]')
     stripChars = u' \t,'
 
     titles = True
@@ -138,15 +89,14 @@ class CaseChecker(object):
     filterredir = 'nonredirects'
 
     def __init__(self):
-
-        for arg in pywikibot.handleArgs():
-            if arg.startswith('-from'):
-                if arg.startswith('-from:'):
-                    self.apfrom = arg[6:]
-                else:
-                    self.apfrom = pywikibot.input(u'Which page to start from: ')
-            elif arg.startswith('-reqsize:'):
-                self.aplimit = int(arg[9:])
+        """Constructor with arg parsing."""
+        for arg in pywikibot.handle_args():
+            arg, sep, value = arg.partition(':')
+            if arg == '-from':
+                self.apfrom = value or pywikibot.input(
+                    'Which page to start from: ')
+            elif arg == '-reqsize':
+                self.aplimit = int(value)
             elif arg == '-links':
                 self.links = True
             elif arg == '-linksonly':
@@ -158,16 +108,16 @@ class CaseChecker(object):
                 self.filterredir = 'all'
             elif arg == '-redironly':
                 self.filterredir = 'redirects'
-            elif arg.startswith('-limit:'):
-                self.stopAfter = int(arg[7:])
-            elif arg == '-autonomous' or arg == '-a':
+            elif arg == '-limit':
+                self.stopAfter = int(value)
+            elif arg in ('-autonomous', '-a'):
                 self.autonomous = True
-            elif arg.startswith('-ns:'):
-                self.namespaces.append(int(arg[4:]))
-            elif arg.startswith('-wikilog:'):
-                self.wikilogfile = arg[9:]
-            elif arg.startswith('-failedlog:'):
-                self.failedTitles = arg[11:]
+            elif arg == '-ns':
+                self.namespaces.append(int(value))
+            elif arg == '-wikilog':
+                self.wikilogfile = value
+            elif arg == '-failedlog':
+                self.failedTitles = value
             elif arg == '-failed':
                 self.doFailed = True
             else:
@@ -243,10 +193,11 @@ class CaseChecker(object):
             self.latToLclKeybDict = {}
 
         badPtrnStr = u'([%s][%s]|[%s][%s])' \
-                     % (self.latLtr, self.localLtr, self.localLtr, self.latLtr)
+                     % (ascii_letters, self.localLtr,
+                        self.localLtr, ascii_letters)
         self.badWordPtrn = re.compile(u'[%s%s]*%s[%s%s]*'
-                                      % (self.latLtr, self.localLtr,
-                                         badPtrnStr, self.latLtr,
+                                      % (ascii_letters, self.localLtr,
+                                         badPtrnStr, ascii_letters,
                                          self.localLtr))
 
         # Get whitelist
@@ -266,7 +217,7 @@ class CaseChecker(object):
                 'pllimit': 'max',
             }
 
-            req = api.Request(**wlparams)
+            req = api.Request(site=self.site, parameters=wlparams)
             data = req.submit()
             if len(data['query']['pageids']) == 1:
                 pageid = data['query']['pageids'][0]
@@ -290,6 +241,7 @@ class CaseChecker(object):
                              % self.site.code)
 
     def RunQuery(self, params):
+        """API query."""
         while True:
             # Get data
             req = api.Request(**params)
@@ -323,6 +275,7 @@ class CaseChecker(object):
             continue
 
     def Run(self):
+        """Run the bot."""
         try:
             self.lastLetter = ''
 
@@ -352,6 +305,7 @@ class CaseChecker(object):
             raise
 
     def ProcessDataBlock(self, data):
+        """Process data block given by RunQuery()."""
         if 'query' not in data or 'pages' not in data['query']:
             return
 
@@ -416,9 +370,8 @@ class CaseChecker(object):
                             elif not dst.exists():
                                 src = self.Page(title)
                                 if page['ns'] == 14:
-                                    import category
                                     dst = self.Page(newTitle)
-                                    bot = category.CategoryMoveRobot(
+                                    bot = CategoryMoveBot(
                                         src.title(withNamespace=False),
                                         dst.title(withNamespace=False),
                                         self.autonomous,
@@ -499,15 +452,18 @@ class CaseChecker(object):
                     raise ValueError(u'Stopping because we are done')
 
     def WikiLog(self, text):
+        """Write log."""
         pywikibot.output(text)
         self.wikilog.write(text + u'\n')
         self.wikilog.flush()
 
     def FindBadWords(self, title):
+        """Retrieve bad words."""
         for m in self.badWordPtrn.finditer(title):
             yield title[m.span()[0]:m.span()[1]]
 
     def ProcessTitle(self, title):
+        """Process title."""
         badWords = list(self.FindBadWords(title))
         if len(badWords) > 0:
             # Allow known words, allow any roman numerals with local suffixes
@@ -534,7 +490,7 @@ class CaseChecker(object):
                 else:
                     if mightBeLcl and l not in self.latinSuspects:
                         mightBeLcl = False
-                    if l not in self.latLtr:
+                    if l not in ascii_letters:
                         raise ValueError(u'Assert failed')
 
             # Some words are well known and frequently mixed-typed
@@ -604,8 +560,8 @@ class CaseChecker(object):
                 # latin character.
                 for itemCntToPick in xrange(0, len(ambigBadWords) + 1):
                     title2 = title
-                    for uc in xuniqueCombinations(list(ambigBadWords),
-                                                  itemCntToPick):
+                    for uc in itertools.combinations(list(ambigBadWords),
+                                                     itemCntToPick):
                         wordsToLat = ambigBadWords.copy()
                         for bw in uc:
                             title2 = title2.replace(bw, mapLcl[bw])
@@ -622,6 +578,7 @@ class CaseChecker(object):
         return (infoText, possibleAlternatives)
 
     def PickTarget(self, title, original, candidates):
+        """Pick target from candidates."""
         if len(candidates) == 0:
             return
         if len(candidates) == 1:
@@ -676,46 +633,52 @@ class CaseChecker(object):
                 return candidates[int(choice) - 1]
 
     def ColorCodeWord(self, word, toScreen=False):
+        """Colorize code word."""
         if not toScreen:
-            res = u"<b>"
+            return self._ColorCodeWordHtml(word)
+        else:
+            return self._ColorCodeWordScreen(word)
+
+    def _ColorCodeWordHtml(self, word):
+        res = '<b>'
         lastIsCyr = word[0] in self.localLtr
         if lastIsCyr:
-            if toScreen:
-                SetColor(FOREGROUND_GREEN)
-            else:
-                res += self.lclClrFnt
+            res += self.lclClrFnt
         else:
-            if toScreen:
-                SetColor(FOREGROUND_RED)
-            else:
-                res += self.latClrFnt
-
+            res += self.latClrFnt
         for l in word:
             if l in self.localLtr:
                 if not lastIsCyr:
-                    if toScreen:
-                        SetColor(FOREGROUND_GREEN)
-                    else:
-                        res += self.suffixClr + self.lclClrFnt
+                    res += self.suffixClr + self.lclClrFnt
+                    lastIsCyr = True
+            elif l in ascii_letters:
+                if lastIsCyr:
+                    res += self.suffixClr + self.latClrFnt
+                    lastIsCyr = False
+            res += l
+        return res + self.suffixClr + '</b>'
+
+    def _ColorCodeWordScreen(self, word):
+        res = ''
+        lastIsCyr = word[0] in self.localLtr
+        if lastIsCyr:
+            res += self.colorFormatLocalColor
+        else:
+            res += self.colorFormatLatinColor
+        for l in word:
+            if l in self.localLtr:
+                if not lastIsCyr:
+                    res += self.colorFormatLocalColor
                     lastIsCyr = True
             elif l in self.latLtr:
                 if lastIsCyr:
-                    if toScreen:
-                        SetColor(FOREGROUND_RED)
-                    else:
-                        res += self.suffixClr + self.latClrFnt
+                    res += self.colorFormatLatinColor
                     lastIsCyr = False
-            if toScreen:
-                pywikibot.output(l, newline=False)
-            else:
-                res += l
-
-        if toScreen:
-            SetColor(FOREGROUND_WHITE)
-        else:
-            return res + self.suffixClr + u"</b>"
+            res += l
+        return formatter.color_format(res + self.colorFormatSuffix)
 
     def AddNoSuggestionTitle(self, title):
+        """Add backlinks to log."""
         if title in self.seenUnresolvedLinks:
             return True
         self.seenUnresolvedLinks.add(title)
@@ -727,7 +690,7 @@ class CaseChecker(object):
             'bllimit': '50',
         }
 
-        req = api.Request(**params)
+        req = api.Request(site=self.site, parameters=params)
         data = req.submit()
         cl = 0
         redirs = 0
@@ -747,6 +710,7 @@ class CaseChecker(object):
         return False
 
     def PutNewPage(self, pageObj, pageTxt, msg):
+        """Save new page."""
         title = pageObj.title(asLink=True, textlink=True)
         coloredMsg = u', '.join([self.ColorCodeWord(m) for m in msg])
         if pageObj.text == pageTxt:
@@ -771,29 +735,34 @@ class CaseChecker(object):
         return False
 
     def MakeMoveSummary(self, fromTitle, toTitle):
+        """Move summary from i18n."""
         return i18n.twtranslate(self.site, "casechecker-replacement-linklist",
                                 {'source': fromTitle, 'target': toTitle})
 
     def MakeLink(self, title, colorcode=True):
+        """Create a colored link string."""
         prf = u'' if self.Page(title).namespace() == 0 else u':'
         cc = u'|««« %s »»»' % self.ColorCodeWord(title) if colorcode else u''
         return u"[[%s%s%s]]" % (prf, title, cc)
 
     def OpenLogFile(self, filename):
+        """Open logfile."""
         try:
             return codecs.open(filename, 'a', 'utf-8')
         except IOError:
             return codecs.open(filename, 'w', 'utf-8')
 
     def AppendLineToLog(self, filename, text):
+        """Write text to logfile."""
         with self.OpenLogFile(filename) as f:
             f.write(text + u'\n')
 
     def Page(self, title):
+        """Create Page object from title."""
         return pywikibot.Page(self.site, title)
 
     def ReplaceLink(self, text, oldtxt, newtxt):
-
+        """Replace links."""
         frmParts = [s.strip(self.stripChars)
                     for s in self.wordBreaker.split(oldtxt)]
         toParts = [s.strip(self.stripChars)
@@ -805,10 +774,8 @@ class CaseChecker(object):
             if len(frmParts[i]) != len(toParts[i]):
                 raise ValueError(u'Splitting parts do not match word length')
             if len(frmParts[i]) > 0:
-                text = text.replace(frmParts[i][0].lower() + frmParts[i][1:],
-                                    toParts[i][0].lower() + toParts[i][1:])
-                text = text.replace(frmParts[i][0].upper() + frmParts[i][1:],
-                                    toParts[i][0].upper() + toParts[i][1:])
+                text = text.replace(first_lower(frmParts[i]), first_lower(toParts[i]))
+                text = text.replace(first_upper(frmParts[i]), first_upper(toParts[i]))
         return text
 
 

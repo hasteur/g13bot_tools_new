@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8  -*-
 u"""
 Script to welcome new users.
@@ -88,8 +89,6 @@ This script understands the following command-line arguments:
 
    -quiet          Prevents users without contributions are displayed
 
-   -quick          Provide quick check by API bulk-retrieve user datas
-
 ********************************* GUIDE ***********************************
 
 Report, Bad and white list guide:
@@ -146,12 +145,6 @@ Example:
 NOTE: The white space and <pre></pre> aren't required but I suggest you to
       use them.
 
-*************************** Known issues/FIXMEs ****************************
-*                                                                          *
-* The regex to load the user might be slightly different from project to   *
-* project. (In this case, write to Filnik or the PWRF for help...)         *
-* Use a class to group toghether the functions used.                       *
-*                                                                          *
 ******************************** Badwords **********************************
 
 The list of Badwords of the code is opened. If you think that a word is
@@ -163,7 +156,7 @@ you can add them directly in the source code that you are using without adding
 or deleting.
 
 Some words, like "Administrator" or "Dio" (God in italian) or "Jimbo" aren't
-badword at all but can be used for some bad-nickname.
+badwords at all but can be used for some bad-nickname.
 """
 #
 # (C) Alfio, 2005
@@ -172,23 +165,29 @@ badword at all but can be used for some bad-nickname.
 # (C) Filnik, 2007-2011
 # (C) Daniel Herding, 2007
 # (C) Alex Shih-Han Lin, 2009-2010
-# (C) xqt, 2009-2011
-# (C) Pywikibot team, 2008-2010
+# (C) xqt, 2009-2016
+# (C) Pywikibot team, 2008-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-import time
-import re
-import locale
 import codecs
-from random import choice
+import locale
+import re
 import sys
+import time
+
+from random import choice
+
 import pywikibot
-from pywikibot import i18n
-from pywikibot import config
+
+from pywikibot import config, i18n
+from pywikibot.tools.formatter import color_format
+from pywikibot.tools import issue_deprecation_warning
 
 if sys.version_info[0] > 2:
     unicode = str
@@ -199,20 +198,15 @@ locale.setlocale(locale.LC_ALL, '')
 # page/user/summary/etc so the need to specify language and project have
 # been eliminated.
 # FIXME: Not all language/project combinations have been defined yet.
-#       Add the following strings to customise for a language:
-#       logbook, talk_page, netext, user, con, report_page
-#       bad_pag, report_text, logt, random_sign and whitelist_pg.
+#        Add the following strings to customise for a language:
+#        logbook, talk_page, netext, user, con, report_page
+#        bad_pag, report_text, logt, random_sign and whitelist_pg.
 
 ############################################################################
-############################################################################
-############################################################################
-
-# The text below are dictionaries. Copy the 'en' line, change 'en' in your
-# language (e.g. 'de') and modify/translate the text.
 
 # The page where the bot will save the log (e.g. Wikipedia:Welcome log).
 #
-# ATTENTION: Not listed projects are disabled to log welcomed users, and no necessary to set details.
+# ATTENTION: Projects not listed won't write a log to the wiki.
 logbook = {
     'ar': u'Project:سجل الترحيب',
     'fr': u'Wikipedia:Prise de décision/Accueil automatique des nouveaux par un robot/log',
@@ -236,13 +230,12 @@ netext = {
         'ar': u'{{subst:ترحيب}} %s',
         'bn': u'{{subst:স্বাগতম/বট}} %s',
         'da': u'{{velkommen|%s}}',
-        'de': u'{{subst:Hallo}} %s',
         'en': u'{{subst:welcome}} %s',
         'fa': u'{{جا:خوشامد}} %s',
         'fr': u'{{subst:Discussion Projet:Aide/Bienvenue}} %s',
         'ga': u'{{subst:fáilte}} %s',
         'he': u'{{ס:ברוך הבא}} %s',
-        'id': u'{{sdbot|%s}}',
+        'id': u'{{subst:sdbot2}}\n%s',
         'it': u'<!-- inizio template di benvenuto -->\n{{subst:Benvebot}}\n%s',
         'ja': u'{{subst:Welcome/intro}}\n{{subst:welcome|%s}}',
         'ka': u'{{ახალი მომხმარებელი}}--%s',
@@ -262,6 +255,7 @@ netext = {
         'zh-yue': u'{{歡迎}}--%s',
     },
     'wikinews': {
+        'ar': '{{subst:ترحيب}} %s',
         'fa': u'{{خوشامد۲|%s}}',
         'it': u'{{subst:benvenuto}}',
         'zh': u'{{subst:welcome}} %s',
@@ -284,12 +278,13 @@ netext = {
 }
 # The page where the bot will report users with a possibly bad username.
 report_page = {
-    'commons': {'_default': u'Project:Administrators\' noticeboard/User problems/Usernames to be checked', },
+    'commons': {
+        '_default': 'Project:Administrators\' noticeboard/User problems/Usernames to be checked',
+    },
     'wikipedia': {
         'am': u'User:Beria/Report',
         'ar': 'Project:إخطار الإداريين/أسماء مستخدمين للفحص',
         'da': u'Bruger:Broadbot/Report',
-        'de': u'Benutzer:Filnik/Report',
         'en': u'Project:Administrator intervention against vandalism',
         'fa': u'Project:تابلوی اعلانات مدیران/گزارش ربات',
         'ga': u'Project:Log fáilte/Drochainmneacha',
@@ -391,9 +386,15 @@ final_new_text_additions = {
 #
 #
 logpage_header = {
-    '_default': u'{|border="2" cellpadding="4" cellspacing="0" style="margin: 0.5em 0.5em 0.5em 1em; padding: 0.5em; background: #bfcda5; border: 1px #b6fd2c solid; border-collapse: collapse; font-size: 95%;"',
+    '_default': u'{|border="2" cellpadding="4" cellspacing="0" style="margin: '
+                u'0.5em 0.5em 0.5em 1em; padding: 0.5em; background: #bfcda5; '
+                u'border: 1px #b6fd2c solid; border-collapse: collapse; '
+                u'font-size: 95%;"',
     'no': u'[[Kategori:Velkomstlogg|{{PAGENAME}}]]\n{| class="wikitable"',
-    'it': u'[[Categoria:Benvenuto log|{{subst:PAGENAME}}]]\n{|border="2" cellpadding="4" cellspacing="0" style="margin: 0.5em 0.5em 0.5em 1em; padding: 0.5em; background: #bfcda5; border: 1px #b6fd2c solid; border-collapse: collapse; font-size: 95%;"'
+    'it': u'[[Categoria:Benvenuto log|{{subst:PAGENAME}}]]\n{|border="2" '
+          u'cellpadding="4" cellspacing="0" style="margin: 0.5em 0.5em 0.5em '
+          u'1em; padding: 0.5em; background: #bfcda5; border: 1px #b6fd2c '
+          u'solid; border-collapse: collapse; font-size: 95%;"'
 }
 
 # Ok, that's all. What is below, is the rest of code, now the code is fixed
@@ -428,7 +429,6 @@ class Global(object):
     defaultSign = '--~~~~'  # default signature
     queryLimit = 50         # number of users that the bot load to check
     quiet = False           # Prevents users without contributions are displayed
-    quick = False           # Provide quick check by API bulk-retrieve user datas
 
 
 class WelcomeBot(object):
@@ -467,6 +467,7 @@ class WelcomeBot(object):
                 % (self.site, self.site.code, self.site.family.name))
 
     def badNameFilter(self, name, force=False):
+        """Check for bad names."""
         if not globalvar.filtBadName:
             return False
 
@@ -562,6 +563,7 @@ class WelcomeBot(object):
         return False
 
     def reportBadAccount(self, name=None, final=False):
+        """Report bad account."""
         # Queue process
         if name:
             if globalvar.confirm:
@@ -616,7 +618,7 @@ class WelcomeBot(object):
 
             com = i18n.twtranslate(self.site, 'welcome-bad_username')
             if rep_text != '':
-                rep_page.put(text_get + rep_text, comment=com, force=True,
+                rep_page.put(text_get + rep_text, summary=com, force=True,
                              minorEdit=True)
                 showStatus(5)
                 pywikibot.output(u'Reported')
@@ -625,6 +627,7 @@ class WelcomeBot(object):
             return True
 
     def makelogpage(self, queue=None):
+        """Make log page."""
         if queue is None:
             queue = []
         if not globalvar.makeWelcomeLog or len(queue) == 0:
@@ -649,7 +652,8 @@ class WelcomeBot(object):
             showStatus()
             pywikibot.output(
                 'Log page is not exist, getting information for page creation')
-            text = i18n.translate(self.site, logpage_header)
+            text = i18n.translate(self.site, logpage_header,
+                                  fallback=i18n.DEFAULT_FALLBACK)
             text += u'\n!%s' % self.site.namespace(2)
             text += u'\n!%s' % str.capitalize(
                 self.site.mediawiki_message('contribslink'))
@@ -666,14 +670,16 @@ class WelcomeBot(object):
                                                    'welcome-updating'))
                 return True
             except pywikibot.EditConflict:
-                pywikibot.output(u'An edit conflict has occured. Pausing for '
+                pywikibot.output(u'An edit conflict has occurred. Pausing for '
                                  u'10 seconds before continuing.')
                 time.sleep(10)
 
     def parseNewUserLog(self):
+        """Retrieve ne users."""
         return self.site.logevents('newusers', total=globalvar.queryLimit)
 
     def defineSign(self, force=False):
+        """Setup signature."""
         if hasattr(self, '_randomSignature') and not force:
             return self._randomSignature
 
@@ -715,14 +721,11 @@ class WelcomeBot(object):
         return self._randomSignature
 
     def run(self):
+        """Run the bot."""
         while True:
             welcomed_count = 0
-            if globalvar.quick and self.site.has_api():
-                us = [x for x in self.parseNewUserLog()]
-                showStatus()
-                pywikibot.User.getall(self.site, us)
-            else:
-                us = (pywikibot.User(self.site, users.user()) for users in self.parseNewUserLog())
+            us = (pywikibot.User(self.site, users.user())
+                  for users in self.parseNewUserLog())
             for users in us:
                 if users.isBlocked():
                     showStatus(3)
@@ -779,7 +782,7 @@ class WelcomeBot(object):
                             self.welcomed_users.append(users)
                         except pywikibot.EditConflict:
                             showStatus(4)
-                            pywikibot.output(u'An edit conflict has occured, '
+                            pywikibot.output(u'An edit conflict has occurred, '
                                              u'skipping this user.')
 
                     if globalvar.makeWelcomeLog and \
@@ -842,6 +845,7 @@ class WelcomeBot(object):
                             u"%d %b %Y %H:%M:%S (UTC)", time.gmtime())
                     pywikibot.output(u'Sleeping %d seconds before rerun. %s'
                                      % (globalvar.timeRecur, strfstr))
+                    pywikibot.stopme()
                     time.sleep(globalvar.timeRecur)
                 else:
                     raise KeyboardInterrupt
@@ -867,8 +871,8 @@ def showStatus(n=0):
         4: 'Warning',
         5: 'Done ',
     }
-    pywikibot.output("\03{%s}[%s]\03{default} "
-                     % (staColor[n], staMsg[n]), newline=False)
+    pywikibot.output(color_format('{color}[{0}]{default} ',
+                                  staMsg[n], color=staColor[n]), newline=False)
 
 
 def load_word_function(raw):
@@ -901,7 +905,7 @@ def main(*args):
         elif arg.startswith('-timeoffset'):
             if len(arg) == 11:
                 globalvar.timeoffset = int(pywikibot.input(
-                    u'Which time offset (in minutest) for new users would you like to use?'))
+                    'Which time offset (in minutes) for new users would you like to use?'))
             else:
                 globalvar.timeoffset = int(arg[12:])
         elif arg.startswith('-time'):
@@ -919,7 +923,10 @@ def main(*args):
             if len(str(globalvar.offset)) != 14:
                 # upon request, we might want to check for software version here
                 raise ValueError(
-                    "Mediawiki has changed, -offset:# is not supported anymore, but -offset:TIMESTAMP is, assuming TIMESTAMP is yyyymmddhhmmss. -timeoffset is now also supported. Please read this script source header for documentation.")
+                    "Mediawiki has changed, -offset:# is not supported "
+                    "anymore, but -offset:TIMESTAMP is, assuming TIMESTAMP "
+                    "is yyyymmddhhmmss. -timeoffset is now also supported. "
+                    "Please read this script source header for documentation.")
         elif arg.startswith('-file:'):
             globalvar.randomSign = True
             if len(arg) == 6:
@@ -963,7 +970,7 @@ def main(*args):
         elif arg == '-quiet':
             globalvar.quiet = True
         elif arg == '-quick':
-            globalvar.quick = True
+            issue_deprecation_warning('The usage of "-quick" option', None, 2)
 
     # Filename and Pywikibot path
     # file where is stored the random signature index
@@ -979,9 +986,8 @@ def main(*args):
         bot = WelcomeBot()
     except KeyError as error:
         # site not managed by welcome.py
-        pywikibot.showHelp()
-        pywikibot.warning(error)
-        return
+        pywikibot.bot.suggest_help(exception=error)
+        return False
 
     try:
         bot.run()

@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 This script processes the Categories for discussion working page.
@@ -5,22 +6,29 @@ This script processes the Categories for discussion working page.
 It parses out the actions that need to be taken as a result of CFD discussions
 (as posted to the working page by an administrator) and performs them.
 
-Syntax: python cfd.py
+Syntax:
+
+    python pwb.py cfd
 
 """
 #
 # (C) Ben McIlwain, 2008
-# (C) Pywikibot team, 2009-2013
+# (C) Pywikibot team, 2009-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import re
+
 import pywikibot
+
 from pywikibot import config2 as config
-import category
+
+from scripts.category import CategoryMoveRobot as CategoryMoveBot
 
 # The location of the CFD working page.
 cfdPage = u'Wikipedia:Categories for discussion/Working'
@@ -40,21 +48,26 @@ movemode = re.compile(r"^===*\s*Move/Merge then delete\s*===*\s*$", re.IGNORECAS
 emptymode = re.compile(r"^===*\s*Empty then delete\s*===*\s*$", re.IGNORECASE)
 deletemode = re.compile(r"^===*\s*Ready for deletion\s*===*\s*$", re.IGNORECASE)
 maintenance = re.compile(r"^===*\s*Old by month categories with entries\s*===*\s*$", re.IGNORECASE)
-dateheader = re.compile(r"(\[\[Wikipedia:Categories[_ ]for[_ ](?:discussion|deletion)/Log/([^\]]*?)\]\])",
-                        re.IGNORECASE)
-movecat = re.compile(r"\[\[:Category:([^\]]*?)\]\][^\]]*?\[\[:Category:([^\]]*?)\]\]", re.IGNORECASE)
+dateheader = re.compile(
+    r'(\[\[Wikipedia:Categories[_ ]for[_ ](?:discussion|deletion)/Log/([^\]]*?)\]\])',
+    re.IGNORECASE)
+movecat = re.compile(r'\[\[:Category:([^\]]*?)\]\][^\]]*?\[\[:Category:([^\]]*?)\]\]',
+                     re.IGNORECASE)
 deletecat = re.compile(r"\[\[:Category:([^\]]*?)\]\]", re.IGNORECASE)
-findday = re.compile(r"\[\[(Wikipedia:Categories for (?:discussion|deletion)/Log/\d{4} \w+ \d+)#", re.IGNORECASE)
+findday = re.compile(r'\[\[(Wikipedia:Categories for (?:discussion|deletion)/Log/\d{4} \w+ \d+)#',
+                     re.IGNORECASE)
 
 
-class ReCheck:
+class ReCheck(object):
 
     """Helper class."""
 
     def __init__(self):
+        """Constructor."""
         self.result = None
 
     def check(self, pattern, text):
+        """Search pattern."""
         self.result = pattern.search(text)
         return self.result
 
@@ -77,9 +90,10 @@ def main(*args):
     page = pywikibot.Page(pywikibot.Site(), cfdPage)
 
     # Variable declarations
-    day = "None"
-    mode = "None"
-    summary = ""
+    day = 'None'
+    mode = 'None'
+    summary = ''
+    action_summary = ''
     robot = None
 
     m = ReCheck()
@@ -114,55 +128,72 @@ def main(*args):
             dest = m.result.group(2)
             thisDay = findDay(src, day)
             if mode == "Move" and thisDay != "None":
-                summary = "Robot - Moving category " + src + " to [[:Category:" + dest + "]] per [[WP:CFD|CFD]] at " + \
-                          thisDay + "."
+                summary = (
+                    'Robot - Moving category ' + src + ' to [[:Category:' +
+                    dest + ']] per [[WP:CFD|CFD]] at ' + thisDay + '.')
+                action_summary = 'Robot - Result of [[WP:CFD|CFD]] at ' + thisDay + '.'
             elif mode == "Speedy":
-                summary = "Robot - Speedily moving category " + src + " to [[:Category:" + dest + \
-                          "]] per [[WP:CFDS|CFDS]]."
+                summary = (
+                    'Robot - Speedily moving category ' + src +
+                    ' to [[:Category:' + dest + ']] per [[WP:CFDS|CFDS]].')
+                action_summary = 'Robot - Speedily moved per [[WP:CFDS|CFDS]].'
             else:
                 continue
             # If the category is redirect, we do NOT want to move articles to
             # it. The safest thing to do here is abort and wait for human
             # intervention.
-            destpage = pywikibot.Page(
-                pywikibot.Site(), dest, ns=14)
+            destpage = pywikibot.Page(page.site, dest, ns=14)
             if destpage.isCategoryRedirect():
                 summary = 'CANCELED. Destination is redirect: ' + summary
-                pywikibot.output(summary, toStdout=True)
+                pywikibot.stdout(summary)
                 robot = None
             else:
-                robot = category.CategoryMoveRobot(oldcat=src, newcat=dest, batch=True,
-                                                   comment=summary, inplace=True, move_oldcat=True,
-                                                   delete_oldcat=True, deletion_comment=True)
+                deletion_comment_same = (
+                    CategoryMoveBot.DELETION_COMMENT_SAME_AS_EDIT_COMMENT)
+                robot = CategoryMoveBot(oldcat=src, newcat=dest, batch=True,
+                                        comment=summary, inplace=True,
+                                        move_oldcat=True, delete_oldcat=True,
+                                        deletion_comment=deletion_comment_same,
+                                        move_comment=action_summary)
         elif m.check(deletecat, line):
             src = m.result.group(1)
-            # I currently don't see any reason to handle these two cases separately, though
-            # if are guaranteed that the category in the "Delete" case is empty, it might be
-            # easier to call delete.py on it.
+            # I currently don't see any reason to handle these two cases
+            # separately, though if are guaranteed that the category in the
+            # "Delete" case is empty, it might be easier to call delete.py on
+            # it.
             thisDay = findDay(src, day)
             if (mode == "Empty" or mode == "Delete") and thisDay != "None":
-                summary = "Robot - Removing category " + src + " per [[WP:CFD|CFD]] at " + thisDay + "."
+                summary = (
+                    'Robot - Removing category {0} per [[WP:CFD|CFD]] '
+                    'at {1}.'.format(src, thisDay))
+                action_summary = 'Robot - Result of [[WP:CFD|CFD]] at ' + thisDay + '.'
             else:
                 continue
-            robot = category.CategoryMoveRobot(oldcat=src, batch=True, comment=summary,
-                                                 deletion_comment=True, inplace=True)
+            robot = CategoryMoveBot(oldcat=src, batch=True, comment=summary,
+                                    deletion_comment=action_summary,
+                                    inplace=True)
         else:
-            # This line does not fit any of our regular expressions, so ignore it.
+            # This line does not fit any of our regular expressions,
+            # so ignore it.
             pass
         if summary != "" and robot is not None:
-            pywikibot.output(summary, toStdout=True)
+            pywikibot.stdout(summary)
             # Run, robot, run!
             robot.run()
         summary = ""
         robot = None
 
 
-# This function grabs the wiki source of a category page and attempts to
-# extract a link to the CFD per-day discussion page from the CFD template.
-# If the CFD template is not there, it will return the value of the second
-# parameter, which is essentially a fallback that is extracted from the
-# per-day subheadings on the working page.
 def findDay(pageTitle, oldDay):
+    """
+    Find day link from CFD template.
+
+    This function grabs the wiki source of a category page and attempts to
+    extract a link to the CFD per-day discussion page from the CFD template.
+    If the CFD template is not there, it will return the value of the second
+    parameter, which is essentially a fallback that is extracted from the
+    per-day subheadings on the working page.
+    """
     page = pywikibot.Page(pywikibot.Site(), u"Category:" + pageTitle)
     try:
         pageSrc = page.text
@@ -176,7 +207,7 @@ def findDay(pageTitle, oldDay):
         # Try to parse day link from CFD template parameters.
         templates = page.templatesWithParams()
         for template in templates:
-            if template[0] in cfdTemplates:
+            if template[0].title() in cfdTemplates:
                 params = template[1]
                 (day, month, year) = [None, None, None]
                 for param in params:
@@ -188,7 +219,8 @@ def findDay(pageTitle, oldDay):
                     elif paramName == 'year':
                         year = paramVal
                 if day and month and year:
-                    return "[[Wikipedia:Categories for discussion/Log/%s %s %s]]" % (year, month, day)
+                    return ('[[Wikipedia:Categories for discussion/Log/%s %s %s]]'
+                            % (year, month, day))
         return oldDay
 
 if __name__ == "__main__":

@@ -5,18 +5,21 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-
-import pywikibot.data.wikidataquery as query
-from tests.aspects import unittest, WikidataTestCase, TestCase
-
-import pywikibot
-from pywikibot.page import ItemPage, PropertyPage, Claim
-
 import os
 import time
+
+import pywikibot
+
+import pywikibot.data.wikidataquery as query
+
+from pywikibot.page import ItemPage, PropertyPage, Claim
+
+from tests.aspects import unittest, WikidataTestCase, TestCase
 
 
 class TestDryApiFunctions(TestCase):
@@ -105,14 +108,13 @@ class TestLiveApiFunctions(WikidataTestCase):
         self.assertEqual(str(q), "claim[99]")
 
         q = query.HasClaim(PropertyPage(self.repo, "P99"),
-                            ItemPage(self.repo, "Q100"))
+                           ItemPage(self.repo, "Q100"))
         self.assertEqual(str(q), "claim[99:100]")
 
         q = query.HasClaim(99, [100, PropertyPage(self.repo, "P101")])
         self.assertEqual(str(q), "claim[99:100,101]")
 
-        q = query.StringClaim(PropertyPage(self.repo, "P99"),
-                                "Hello")
+        q = query.StringClaim(PropertyPage(self.repo, "P99"), "Hello")
         self.assertEqual(str(q), 'string[99:"Hello"]')
 
         q = query.Tree(ItemPage(self.repo, "Q92"), [1], 2)
@@ -140,26 +142,43 @@ class TestLiveApiFunctions(WikidataTestCase):
         self.assertEqual(str(q), 'between[569,,+00000002010-01-01T01:00:00Z]')
 
         q = query.Between(569, begin, end)
-        self.assertEqual(str(q), 'between[569,+00000001999-01-01T00:00:00Z,+00000002010-01-01T01:00:00Z]')
+        self.assertEqual(str(q),
+                         'between[569,+00000001999-01-01T00:00:00Z,+00000002010-01-01T01:00:00Z]')
 
         # try negative year
         begin = pywikibot.WbTime(site=self.repo, year=-44)
         q = query.Between(569, begin, end)
-        self.assertEqual(str(q), 'between[569,-00000000044-01-01T00:00:00Z,+00000002010-01-01T01:00:00Z]')
+        self.assertEqual(str(q),
+                         'between[569,-00000000044-01-01T00:00:00Z,+00000002010-01-01T01:00:00Z]')
 
     def testQueriesDirectFromClaim(self):
         """Test construction of the right Query from a page.Claim."""
+        # Datatype: item
         claim = Claim(self.repo, 'P17')
         claim.setTarget(pywikibot.ItemPage(self.repo, 'Q35'))
-
         q = query.fromClaim(claim)
         self.assertEqual(str(q), 'claim[17:35]')
 
+        # Datatype: string
+        claim = Claim(self.repo, 'P225')
+        claim.setTarget('somestring')
+        q = query.fromClaim(claim)
+        self.assertEqual(str(q), 'string[225:"somestring"]')
+
+        # Datatype: external-id
         claim = Claim(self.repo, 'P268')
         claim.setTarget('somestring')
-
         q = query.fromClaim(claim)
         self.assertEqual(str(q), 'string[268:"somestring"]')
+
+        # Datatype: commonsMedia
+        claim = Claim(self.repo, 'P18')
+        claim.setTarget(
+            pywikibot.FilePage(
+                pywikibot.Site(self.family, self.code),
+                'Foo.jpg'))
+        q = query.fromClaim(claim)
+        self.assertEqual(str(q), 'string[18:"Foo.jpg"]')
 
     def testQuerySets(self):
         """Test that we can join queries together correctly."""
@@ -191,13 +210,15 @@ class TestLiveApiFunctions(WikidataTestCase):
         qs1 = q1.AND(q2)
         qs2 = q1.OR(qs1).AND(query.HasClaim(98))
 
-        self.assertEqual(str(qs2), '(claim[99:100] OR (claim[99:100] AND claim[99:101])) AND claim[98]')
+        self.assertEqual(str(qs2),
+                         '(claim[99:100] OR (claim[99:100] AND claim[99:101])) AND claim[98]')
 
         # if the joiners are the same, no need to group
         qs1 = q1.AND(q2)
         qs2 = q1.AND(qs1).AND(query.HasClaim(98))
 
-        self.assertEqual(str(qs2), 'claim[99:100] AND claim[99:100] AND claim[99:101] AND claim[98]')
+        self.assertEqual(str(qs2),
+                         'claim[99:100] AND claim[99:100] AND claim[99:101] AND claim[98]')
 
         qs1 = query.HasClaim(100).AND(query.HasClaim(101))
         qs2 = qs1.OR(query.HasClaim(102))
@@ -226,11 +247,7 @@ class TestApiSlowFunctions(TestCase):
 
     """Test slow WikiDataQuery API functions."""
 
-    sites = {
-        'wdq': {
-            'hostname': 'wdq.wmflabs.org',
-        },
-    }
+    hostname = 'https://wdq.wmflabs.org/api'
 
     def testQueryApiGetter(self):
         """Test that we can actually retreive data and that caching works."""

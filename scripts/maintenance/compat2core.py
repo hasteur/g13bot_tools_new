@@ -17,22 +17,28 @@ The scripts asks for the .py file and converts it to
 usage
 
 to convert a script and show warnings about deprecated methods:
-            pwb.py maintenance/compat2core <scriptname>
+
+    python  pwb.py maintenance/compat2core <scriptname>
 
 to show warnings about deprecated methods:
-            pwb.py maintenance/compat2core <scriptname> -warnonly
+
+    python pwb.py maintenance/compat2core <scriptname> -warnonly
 """
 #
-# (C) xqt, 2014
+# (C) xqt, 2014-2015
+# (C) Pywikibot team, 2014-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
+import codecs
 import os
 import re
-import codecs
+
 import pywikibot
 
 # be careful with replacement order!
@@ -52,32 +58,35 @@ replacements = (
     ('import catlib\r?\n', ''),
     ('import userlib\r?\n', ''),
     # change wikipedia to pywikibot, exclude URLs
-    ('(?<!\.)wikipedia\.', u'pywikibot.'),
+    (r'(?<!\.)wikipedia\.', u'pywikibot.'),
     # site instance call
-    ('pywikibot\.getSite\s*\(\s*', 'pywikibot.Site('),
+    (r'pywikibot\.getSite\s*\(\s*', 'pywikibot.Site('),
     # lang is different from code. We should use code in core
-    ('([Ss])ite.lang(?:uage\(\))?', r'\1ite.code'),
+    (r'([Ss])ite.lang(?:uage\(\))?', r'\1ite.code'),
     # change compat library classes to pywikibot intrinsic classes
-    ('catlib\.Category\s*\(\s*', 'pywikibot.Category('),
-    ('catlib\.change_category\s*\((\s*)(?P<article>.+?),\s*(?P<oldcat>.+?),',
+    (r'catlib\.Category\s*\(\s*', 'pywikibot.Category('),
+    (r'catlib\.change_category\s*\((\s*)(?P<article>.+?),\s*(?P<oldcat>.+?),',
      r'\g<article>.change_category(\1\g<oldcat>,'),
-    ('userlib\.User\s*\(\s*', 'pywikibot.User('),
+    (r'userlib\.User\s*\(\s*', 'pywikibot.User('),
     # change ImagePage to FilePage
-    ('pywikibot\.ImagePage\s*\(\s*', 'pywikibot.FilePage('),
+    (r'pywikibot\.ImagePage\s*\(\s*', 'pywikibot.FilePage('),
     # deprecated title methods
-    ('\.urlname\s*\(\s*\)', '.title(asUrl=True)'),
-    ('\.urlname\s*\(\s*(?:withNamespace\s*=\s*)?(True|False)+\s*\)',
+    (r'\.urlname\s*\(\s*\)', '.title(asUrl=True)'),
+    (r'\.urlname\s*\(\s*(?:withNamespace\s*=\s*)?(True|False)+\s*\)',
      r'.title(asUrl=True, withNamespace=\1)'),
-    ('\.titleWithoutNamespace\s*\(\s*\)', '.title(withNamespace=False)'),
-    ('\.sectionFreeTitle\s*\(\s*\)', '.title(withSection=False)'),
-    ('\.aslink\s*\(\s*\)', '.title(asLink=True)'),
+    (r'\.titleWithoutNamespace\s*\(\s*\)', '.title(withNamespace=False)'),
+    (r'\.sectionFreeTitle\s*\(\s*\)', '.title(withSection=False)'),
+    (r'\.aslink\s*\(\s*\)', '.title(asLink=True)'),
     # other deprecated methods
-    ('(?<!site)\.encoding\s*\(\s*\)', '.site.encoding()'),
-    ('\.newimages\s*\(', '.newfiles('),
-    # new core methods
-    ('\.get\s*\(\s*get_redirect\s*=\s*True\s*\)', '.text'),
+    (r'(?<!site)\.encoding\s*\(\s*\)', '.site.encoding()'),
+    (r'\.newimages\s*\(', '.newfiles('),
+    (r'\.getRestrictions\s*\(', '.protection('),
+    # new core methods and properties
+    (r'\.get\s*\(\s*get_redirect\s*=\s*True\s*\)', '.text'),
+    (r'(?:pywikibot|wikipedia)\.verbose', 'config.verbose_output'),
     # stopme() is done by the framework itself
-    ('(\s*)try\:\s*\r?\n\s+main\(\)\s*\r?\n\s*finally\:\s*\r?\n\s+pywikibot\.stopme\(\)',
+    (r'(\s*)try\:\s*\r?\n\s+main\(\)\s*\r?\n\s*finally\:\s*\r?\n'
+     r'\s+pywikibot\.stopme\(\)',
      r'\1main()'),
 )
 
@@ -98,7 +107,7 @@ warnings = (
      'MediaWiki one'),
     ('.getFileMd5Sum(',
      'FilePage.getFileMd5Sum() is deprecated should be replaced by '
-     'getFileSHA1Sum()'),
+     'FilePage.latest_file_info.sha1'),
     (' wikipedia.',
      '"wikipedia" library has been changed to "pywikibot".'),
     ('from wikipedia import',
@@ -107,6 +116,8 @@ warnings = (
     ('query.GetData(',
      'query.GetData() should be replaced by pywikibot.data.api.Request or\n'
      'by a direct site request'),
+    ('.verbose',
+     'verbose_output need "from pywikibot import config" first')
 )
 
 
@@ -115,10 +126,12 @@ class ConvertBot(object):
     """Script conversion bot."""
 
     def __init__(self, filename=None, warnonly=False):
+        """Constructor."""
         self.source = filename
         self.warnonly = warnonly
 
     def run(self):
+        """Run the bot."""
         self.get_source()
         self.get_dest()
         if not self.warnonly:
@@ -126,6 +139,7 @@ class ConvertBot(object):
         self.warning()
 
     def get_source(self):
+        """Get source script."""
         while True:
             if self.source is None:
                 self.source = pywikibot.input(
@@ -144,6 +158,7 @@ class ConvertBot(object):
             self.source = None
 
     def get_dest(self):
+        """Ask for destination script name."""
         self.dest = u'%s-core.%s' % tuple(self.source.rsplit(u'.', 1))
         if not self.warnonly and not pywikibot.input_yn(
                 u'Destination file is %s.' % self.dest,
@@ -152,6 +167,7 @@ class ConvertBot(object):
             exit()
 
     def convert(self):
+        """Convert script."""
         f = codecs.open(self.source, "r", "utf-8")
         text = f.read()
         f.close()
@@ -162,6 +178,7 @@ class ConvertBot(object):
         g.close()
 
     def warning(self):
+        """Show warnings and hints."""
         filename = self.source if self.warnonly else self.dest
         g = codecs.open(filename, "r", "utf-8")
         for i, line in enumerate(g, start=1):
@@ -172,6 +189,7 @@ class ConvertBot(object):
 
 
 def main():
+    """Process command line arguments and invoke bot."""
     filename = None
     warnonly = False
 

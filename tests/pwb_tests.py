@@ -11,18 +11,17 @@ https://bitbucket.org/ned/coveragepy/src/default/tests/test_execfile.py
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
-import os
 import sys
 
-from tests import _tests_dir
+from tests import join_tests_path, create_path_func
 from tests.utils import execute, execute_pwb
 from tests.aspects import unittest, PwbTestCase
 
-testbasepath = os.path.join(_tests_dir, 'pwb')
-print_locals_test_package = 'tests.pwb.print_locals'
-print_locals_test_script = os.path.join(testbasepath, 'print_locals.py')
+join_pwb_tests_path = create_path_func(join_tests_path, 'pwb')
 
 
 class TestPwb(PwbTestCase):
@@ -40,17 +39,44 @@ class TestPwb(PwbTestCase):
     site = False
     net = False
 
-    def testScriptEnvironment(self):
+    def _do_check(self, name):
+        package_name = 'tests.pwb.' + name
+        script_path = join_pwb_tests_path(name + '.py')
+
+        direct = execute([sys.executable, '-m', package_name])
+        vpwb = execute_pwb([script_path])
+        self.maxDiff = None
+        self.assertEqual(direct['stdout'], vpwb['stdout'])
+
+        return (direct, vpwb)
+
+    def test_env(self):
         """
-        Test environment of pywikibot.
+        Test external environment of pywikibot.
 
         Make sure the environment is not contaminated, and is the same as
         the environment we get when directly running a script.
         """
-        direct = execute([sys.executable, '-m', 'tests.pwb.print_locals'])
-        vpwb = execute_pwb([print_locals_test_script])
-        self.maxDiff = None
-        self.assertEqual(direct['stdout'], vpwb['stdout'])
+        self._do_check('print_env')
+
+    def test_locals(self):
+        """
+        Test internal environment of pywikibot.
+
+        Make sure the environment is not contaminated, and is the same as
+        the environment we get when directly running a script.
+        """
+        self._do_check('print_locals')
+
+    def test_unicode(self):
+        """Test printing unicode in pywikibot."""
+        (direct, vpwb) = self._do_check('print_unicode')
+
+        self.assertEqual('Häuser', direct['stdout'].strip())
+        self.assertEqual('Häuser', direct['stderr'].strip())
+        self.assertEqual('Häuser', vpwb['stdout'].strip())
+        self.assertEqual('Häuser', vpwb['stderr'].strip())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=10)

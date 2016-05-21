@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """User interface for unix terminals."""
 #
-# (C) Pywikibot team, 2003-2014
+# (C) Pywikibot team, 2003-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import sys
-from . import terminal_interface_base
+
+from pywikibot.userinterfaces import terminal_interface_base
 
 unixColors = {
     'default':     chr(27) + '[0m',     # Unix end tag to switch back to default
@@ -28,6 +31,8 @@ unixColors = {
     'lightpurple': chr(27) + '[95m',    # Light Purple tag (Magenta)
     'lightaqua':   chr(27) + '[96m',    # Light Aqua tag (Cyan)
     'white':       chr(27) + '[97m',    # White start tag (Bright White)
+    'Blightgreen': chr(27) + '[102m',   # Background Light Red tag
+    'Blightred':   chr(27) + '[101m',   # Background Light Green tag
 }
 
 
@@ -35,24 +40,25 @@ class UnixUI(terminal_interface_base.UI):
 
     """User interface for unix terminals."""
 
-    def printColorized(self, text, targetStream):
-        """Print the text colorized using the Unix colors."""
-        totalcount = 0
-        for key, value in unixColors.items():
-            ckey = '\03{%s}' % key
-            totalcount += text.count(ckey)
-            text = text.replace(ckey, value)
+    def support_color(self, target_stream):
+        """Return that the target stream supports colors."""
+        return True
 
-        if totalcount > 0:
-            # just to be sure, reset the color
-            text += unixColors['default']
+    def encounter_color(self, color, target_stream):
+        """Write the unix color directly to the stream."""
+        self._write(unixColors[color], target_stream)
 
-        # .encoding does not mean we can write unicode
-        # to the stream pre-2.7.
-        if sys.version_info >= (2, 7) and \
-           hasattr(targetStream, 'encoding') and \
-           targetStream.encoding:
-            text = text.encode(targetStream.encoding, 'replace').decode(targetStream.encoding)
-            targetStream.write(text)
-        else:
-            targetStream.write(text.encode(self.encoding, 'replace'))
+    def _write(self, text, target_stream):
+        """Optionally encode and write the text to the target stream."""
+        targetStream = target_stream
+        if sys.version_info[0] == 2:
+            # .encoding does not mean we can write unicode
+            # to the stream pre-2.7.
+            if (sys.version_info >= (2, 7) and
+                    hasattr(targetStream, 'encoding') and
+                    targetStream.encoding):
+                text = text.encode(targetStream.encoding, 'replace').decode(
+                    targetStream.encoding)
+            else:
+                text = text.encode(self.encoding, 'replace')
+        targetStream.write(text)

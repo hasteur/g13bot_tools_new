@@ -1,30 +1,23 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikia."""
+from __future__ import absolute_import, unicode_literals
 
 __version__ = '$Id$'
 
 from pywikibot import family
+from pywikibot.tools import deprecated
 
 
 # The Wikia Search family
 # user-config.py: usernames['wikia']['wikia'] = 'User name'
-class Family(family.Family):
+class Family(family.SingleSiteFamily):
 
     """Family class for Wikia."""
 
-    def __init__(self):
-        """Constructor."""
-        family.Family.__init__(self)
-        self.name = u'wikia'
+    name = u'wikia'
+    domain = 'www.wikia.com'
 
-        self.langs = {
-            u'wikia': None,
-        }
-
-    def hostname(self, code):
-        """Return the hostname for every site in this family."""
-        return u'www.wikia.com'
-
+    @deprecated('APISite.version()')
     def version(self, code):
         """Return the version for this family."""
         return "1.19.20"

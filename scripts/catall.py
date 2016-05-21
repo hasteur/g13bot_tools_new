@@ -1,5 +1,5 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
-
 """
 This script shows the categories on each page and lets you change them.
 
@@ -10,7 +10,8 @@ For each page in the target wiki:
   list of categories to replace the current list of categories of the page.
 
 Usage:
-    catall.py [start]
+
+    python pwb.py catall [start]
 
 If no starting name is provided, the bot starts at 'A'.
 
@@ -23,18 +24,23 @@ Options:
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import pywikibot
 from pywikibot import i18n, textlib
+from pywikibot.bot import QuitKeyboardInterrupt
 
 
 def choosecats(pagetext):
+    """Coose categories."""
     chosen = []
     done = False
     length = 1000
-    print("""Give the new categories, one per line.
+    # TODO: → input_choice
+    pywikibot.output("""Give the new categories, one per line.
 Empty line: if the first, don't change. Otherwise: Ready.
 -: I made a mistake, let me start over.
 ?: Give the text of the page with GUI.
@@ -59,22 +65,23 @@ q: quit.""")
             chosen = None
             done = True
         elif choice == "q":
-            raise pywikibot.QuitKeyboardInterrupt
+            raise QuitKeyboardInterrupt
         else:
             chosen.append(choice)
     return chosen
 
 
 def make_categories(page, list, site=None):
+    """Make categories."""
     if site is None:
         site = pywikibot.Site()
     pllist = []
     for p in list:
-        cattitle = "%s:%s" % (site.category_namespace(), p)
+        cattitle = "%s:%s" % (site.namespaces.CATEGORY, p)
         pllist.append(pywikibot.Page(site, cattitle))
     page.put_async(textlib.replaceCategoryLinks(page.get(), pllist,
                                                 site=page.site),
-                   comment=i18n.twtranslate(site.code, 'catall-changing'))
+                   summary=i18n.twtranslate(site, 'catall-changing'))
 
 
 def main(*args):
@@ -105,8 +112,8 @@ def main(*args):
             cats = p.categories()
             if not cats:
                 pywikibot.output(u"========== %s ==========" % p.title())
-                print("No categories")
-                print("-" * 40)
+                pywikibot.output('No categories')
+                pywikibot.output('-' * 40)
                 newcats = choosecats(text)
                 if newcats != [] and newcats is not None:
                     make_categories(p, newcats, mysite)
@@ -114,7 +121,7 @@ def main(*args):
                 pywikibot.output(u"========== %s ==========" % p.title())
                 for c in cats:
                     pywikibot.output(c.title())
-                print("-" * 40)
+                pywikibot.output('-' * 40)
                 newcats = choosecats(text)
                 if newcats is None:
                     make_categories(p, [], mysite)

@@ -1,33 +1,33 @@
 # -*- coding: utf-8  -*-
 """Test Interwiki Link functionality."""
 #
-# (C) Pywikipedia bot team, 2014
+# (C) Pywikibot team, 2014
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 from pywikibot import config2 as config
-from pywikibot.page import Link
+
 from pywikibot.exceptions import InvalidTitle
-from tests.aspects import unittest, TestCase
+from pywikibot.page import Link
+
+from tests.aspects import (
+    unittest,
+    AlteredDefaultSiteTestCase as LinkTestCase,
+    TestCase,
+)
 
 
-class TestPartiallyQualifiedLinkDifferentCodeParser(TestCase):
+class TestPartiallyQualifiedLinkDifferentCodeParser(LinkTestCase):
 
     """Tests for interwiki links to local sites."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_family(self):
         """Test that Link uses config.family for namespace 0."""

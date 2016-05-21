@@ -1,64 +1,49 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikisource."""
+from __future__ import absolute_import, unicode_literals
+
 from pywikibot import family
 
 __version__ = '$Id$'
 
 
 # The Wikimedia family that is known as Wikisource
-class Family(family.WikimediaFamily):
+class Family(family.SubdomainFamily, family.WikimediaFamily):
 
     """Family class for Wikisource."""
 
+    name = 'wikisource'
+
+    closed_wikis = [
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Old_English_Wikisource
+        'ang',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Haitian_Creole_Wikisource
+        'ht',
+    ]
+
     def __init__(self):
         """Constructor."""
-        super(Family, self).__init__()
-        self.name = 'wikisource'
-
         self.languages_by_size = [
-            'fr', 'en', 'de', 'ru', 'it', 'pl', 'zh', 'he', 'es', 'sv', 'pt',
-            'cs', 'ca', 'fa', 'hu', 'ar', 'ml', 'ko', 'sl', 'te', 'ro', 'fi',
-            'sr', 'vi', 'sa', 'el', 'hr', 'no', 'th', 'bn', 'hy', 'is', 'nl',
-            'gu', 'la', 'ja', 'br', 'vec', 'uk', 'eo', 'tr', 'mk', 'yi', 'ta',
-            'az', 'id', 'be', 'da', 'li', 'et', 'as', 'mr', 'bg', 'bs', 'sah',
-            'kn', 'gl', 'lt', 'cy', 'sk', 'zh-min-nan', 'fo',
+            'en', 'de', 'ru', 'fr', 'he', 'zh', 'pl', 'es', 'it', 'ar', 'cs',
+            'pt', 'fa', 'hu', 'ml', 'ko', 'sv', 'sl', 'te', 'ro', 'gu', 'fi',
+            'sr', 'sa', 'vi', 'el', 'bn', 'ca', 'hy', 'th', 'hr', 'ja', 'nl',
+            'is', 'br', 'az', 'no', 'la', 'uk', 'vec', 'eo', 'tr', 'ta', 'be',
+            'mk', 'yi', 'id', 'da', 'et', 'li', 'as', 'bg', 'mr', 'kn', 'bs',
+            'sah', 'lt', 'gl', 'or', 'cy', 'sk', 'zh-min-nan', 'fo',
         ]
 
-        self.langs = dict([(lang, '%s.wikisource.org' % lang)
-                           for lang in self.languages_by_size])
-        self.langs['-'] = 'wikisource.org'
+        super(Family, self).__init__()
 
-        # Global bot allowed languages on https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
+        # FIXME: '-' is invalid at the beginning of a hostname, and
+        # '-' is not a valid subdomain.
+        self.langs['-'] = self.domain
+        self.languages_by_size.append('-')
+
+        # Global bot allowed languages on
+        # https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
         self.cross_allowed = [
             'ca', 'el', 'fa', 'it', 'ko', 'no', 'pl', 'vi', 'zh',
         ]
-
-        # Which languages have a special order for putting interlanguage links,
-        # and what order is it? If a language is not in interwiki_putfirst,
-        # alphabetical order on language code is used. For languages that are in
-        # interwiki_putfirst, interwiki_putfirst is checked first, and
-        # languages are put in the order given there. All other languages are
-        # put after those, in code-alphabetical order.
-        self.interwiki_putfirst = {
-            'en': self.alphabetic,
-            'fi': self.alphabetic,
-            'fr': self.alphabetic,
-            'he': ['en'],
-            'hu': ['en'],
-            'pl': self.alphabetic,
-            'simple': self.alphabetic
-        }
-
-        self.obsolete = {
-            'ang': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Old_English_Wikisource
-            'dk': 'da',
-            'ht': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Haitian_Creole_Wikisource
-            'jp': 'ja',
-            'minnan': 'zh-min-nan',
-            'nb': 'no',
-            'zh-tw': 'zh',
-            'zh-cn': 'zh'
-        }
 
         self.authornamespaces = {
             '_default': [0],
@@ -90,10 +75,6 @@ class Family(family.WikimediaFamily):
             'vi': [102],
             'zh': [102],
         }
-
-        for key, values in self.authornamespaces.items():
-            for item in values:
-                self.crossnamespace[item].update({key: self.authornamespaces})
 
         # Subpages for documentation.
         # TODO: List is incomplete, to be completed for missing languages.
@@ -127,7 +108,3 @@ class Family(family.WikimediaFamily):
             'sv': (u'/dok', ),
             'uk': (u'/документація', ),
         }
-
-    def shared_data_repository(self, code, transcluded=False):
-        """Return the shared data repository for this site."""
-        return ('wikidata', 'wikidata')

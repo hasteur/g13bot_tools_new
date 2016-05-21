@@ -1,12 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
 """
 Script to remove links that are being or have been spammed.
 
 Usage:
 
-spamremove.py www.spammedsite.com
+    python pwb.py spamremove www.spammedsite.com
 
 It will use Special:Linksearch to find the pages on the wiki that link to
 that site, then for each page make a proposed change consisting of removing
@@ -21,21 +20,27 @@ Command line options:
 
 -namespace:       Filters the search to a given namespace. If this is specified
                   multiple times it will search all given namespaces
+-protocol:        The protocol prefix (default: "http")
+-summary:         A string to be used instead of the default summary
 
 """
-
 #
-# (C) Pywikibot team, 2007-2014
+# (C) Pywikibot team, 2007-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 #
 
 import pywikibot
-from pywikibot import pagegenerators, i18n
+
+from pywikibot import i18n
+
 from pywikibot.editor import TextEditor
+from pywikibot.tools.formatter import color_format
 
 
 def main(*args):
@@ -50,6 +55,8 @@ def main(*args):
     always = False
     namespaces = []
     spamSite = ''
+    protocol = 'http'
+    summary = None
     for arg in pywikibot.handle_args(args):
         if arg == "-always":
             always = True
@@ -58,30 +65,36 @@ def main(*args):
                 namespaces.append(int(arg[len('-namespace:'):]))
             except ValueError:
                 namespaces.append(arg[len('-namespace:'):])
+        elif arg.startswith('-protocol:'):
+            protocol = arg.partition(':')[2]
+        elif arg.startswith('-summary:'):
+            summary = arg.partition(':')[2]
         else:
             spamSite = arg
 
     if not spamSite:
-        pywikibot.showHelp()
-        pywikibot.output(u"No spam site specified.")
-        return
+        pywikibot.bot.suggest_help(missing_parameters=['spam site'])
+        return False
 
     mysite = pywikibot.Site()
-    pages = mysite.exturlusage(spamSite)
-    if namespaces:
-        pages = pagegenerators.NamespaceFilterPageGenerator(pages, namespaces)
-    pages = pagegenerators.PreloadingGenerator(pages)
+    pages = mysite.exturlusage(
+        spamSite, protocol=protocol, namespaces=namespaces, content=True
+    )
 
-    summary = i18n.twtranslate(mysite, 'spamremove-remove',
-                               {'url': spamSite})
+    if not summary:
+        summary = i18n.twtranslate(
+            mysite,
+            'spamremove-remove',
+            {'url': spamSite}
+        )
     for i, p in enumerate(pages, 1):
         text = p.text
         if spamSite not in text:
             continue
         # Show the title of the page we're working on.
         # Highlight the title in purple.
-        pywikibot.output(u"\n\n>>> \03{lightpurple}%s\03{default} <<<"
-                         % p.title())
+        pywikibot.output(color_format(
+            '\n\n>>> {lightpurple}{0}{default} <<<', p.title()))
         lines = text.split('\n')
         newpage = []
         lastok = ""
@@ -89,7 +102,7 @@ def main(*args):
             if spamSite in line:
                 if lastok:
                     pywikibot.output(lastok)
-                pywikibot.output('\03{lightred}%s\03{default}' % line)
+                pywikibot.output(color_format('{lightred}{0}{default}', line))
                 lastok = None
             else:
                 newpage.append(line)

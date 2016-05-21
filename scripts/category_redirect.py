@@ -17,22 +17,28 @@ are taken into account.
                   moves all images, pages and categories in redirect categories
                   to the target category.
 
-Usage: category_redirect.py [options]
+Usage:
+
+    python pwb.py category_redirect [options]
 
 """
-
 #
-# (C) Pywikibot team, 2008-2014
+# (C) Pywikibot team, 2008-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
-import sys
 import re
+import sys
 import time
+
 from datetime import timedelta
+
 import pywikibot
+
 from pywikibot import i18n, pagegenerators, config
 
 if sys.version_info[0] > 2:
@@ -69,6 +75,7 @@ class CategoryRedirectBot(pywikibot.Bot):
         # Category that contains all redirected category pages
         self.cat_redirect_cat = {
             'commons': "Category:Category redirects",
+            'meta': 'Category:Maintenance of categories/Soft redirected categories',
             'ar': u"تصنيف:تحويلات تصنيفات ويكيبيديا",
             'cs': u"Kategorie:Zastaralé kategorie",
             'da': "Kategori:Omdirigeringskategorier",
@@ -81,6 +88,7 @@ class CategoryRedirectBot(pywikibot.Bot):
             'pl': "Kategoria:Przekierowania kategorii",
             'pt': "Categoria:!Redirecionamentos de categorias",
             'ru': "Категория:Википедия:Категории-дубликаты",
+            'sco': "Category:Wikipaedia soft redirectit categories",
             'simple': "Category:Category redirects",
             'sh': u"Kategorija:Preusmjerene kategorije Wikipedije",
             'vi': u"Thể loại:Thể loại đổi hướng",
@@ -95,9 +103,9 @@ class CategoryRedirectBot(pywikibot.Bot):
         self.dbl_redir_comment = 'category_redirect-fix-double'
         self.maint_comment = 'category_redirect-comment'
         self.edit_request_text = i18n.twtranslate(
-            self.site.code, 'category_redirect-edit-request') + u'\n~~~~'
+            self.site, 'category_redirect-edit-request') + u'\n~~~~'
         self.edit_request_item = i18n.twtranslate(
-            self.site.code, 'category_redirect-edit-request-item')
+            self.site, 'category_redirect-edit-request-item')
 
     def get_cat_title(self):
         """Specify the category title."""
@@ -123,9 +131,13 @@ class CategoryRedirectBot(pywikibot.Bot):
                 newCat = pywikibot.Category(self.site,
                                             self.catprefix + newCatTitle)
 
-                oldCatLink = oldCat.title()
-                newCatLink = newCat.title()
-                comment = editSummary % locals()
+                param = {
+                    'oldCatLink': oldCat.title(),
+                    'oldCatTitle': oldCatTitle,
+                    'newCatLink': newCat.title(),
+                    'newCatTitle': newCatTitle,
+                }
+                comment = editSummary % param
                 # Move articles
                 found, moved = 0, 0
                 for article in oldCat.members():
@@ -194,12 +206,12 @@ class CategoryRedirectBot(pywikibot.Bot):
                 sorted(log_items.items(), reverse=True)[:LOG_SIZE - 1]]
         log_text = "\n".join("\n".join(line for line in text) for text in keep)
         # get permalink to older logs
-        history = self.log_page.getVersionHistory(total=LOG_SIZE)
+        history = list(self.log_page.revisions(total=LOG_SIZE))
         # get the id of the newest log being archived
-        rotate_revid = history[LOG_SIZE - 1][0]
+        rotate_revid = history[-1].revid
         # append permalink
-        log_text = log_text + ("\n\n'''[%s Older logs]'''"
-                               % self.log_page.permalink(oldid=rotate_revid))
+        log_text += ("\n\n'''[%s Older logs]'''"
+                     % self.log_page.permalink(oldid=rotate_revid))
         return log_text
 
     def check_hard_redirect(self):
@@ -210,11 +222,12 @@ class CategoryRedirectBot(pywikibot.Bot):
         softredirect template.
         """
         pywikibot.output("Checking hard-redirect category pages.")
-        comment = i18n.twtranslate(self.site.code, self.redir_comment)
+        comment = i18n.twtranslate(self.site, self.redir_comment)
 
         # generator yields all hard redirect pages in namespace 14
         for page in pagegenerators.PreloadingGenerator(
-                self.site.allpages(namespace=14, filterredir=True), step=250):
+                self.site.allpages(namespace=14, filterredir=True),
+                groupsize=250):
             if page.isCategoryRedirect():
                 # this is already a soft-redirect, so skip it (for now)
                 continue
@@ -228,7 +241,7 @@ class CategoryRedirectBot(pywikibot.Bot):
                 # race condition: someone else removed the redirect while we
                 # were checking for it
                 continue
-            if target.namespace() == 14:
+            if target.isCategory():
                 # this is a hard-redirect to a category page
                 newtext = (u"{{%(template)s|%(cat)s}}"
                            % {'cat': target.title(withNamespace=False),
@@ -252,8 +265,6 @@ class CategoryRedirectBot(pywikibot.Bot):
 
     def run(self):
         """Run the bot."""
-        global destmap, catlist, catmap
-
         # validate L10N
         try:
             self.template_list = self.site.family.category_redirect_templates[
@@ -266,14 +277,13 @@ class CategoryRedirectBot(pywikibot.Bot):
             pywikibot.warning(u"No redirect category found for %s" % self.site)
             return
 
-        # user() invokes login()
-        user = self.site.user()
+        user = self.site.user()  # invokes login()
         newredirs = []
 
         l = time.localtime()
         today = "%04d-%02d-%02d" % l[:3]
         edit_request_page = pywikibot.Page(
-            self.site, u"User:%(user)s/category edit requests" % locals())
+            self.site, u"User:%s/category edit requests" % user)
         datafile = pywikibot.config.datafilepath("%s-catmovebot-data"
                                                  % self.site.dbName())
         try:
@@ -285,6 +295,7 @@ class CategoryRedirectBot(pywikibot.Bot):
             with open(datafile + ".bak", "wb") as f:
                 cPickle.dump(record, f, protocol=config.pickle_protocol)
         # regex to match soft category redirects
+        # TODO: enhance and use textlib._MultiTemplateMatchBuilder
         #  note that any templates containing optional "category:" are
         #  incorrect and will be fixed by the bot
         template_regex = re.compile(
@@ -301,9 +312,9 @@ class CategoryRedirectBot(pywikibot.Bot):
 
         self.check_hard_redirect()
 
-        comment = i18n.twtranslate(self.site.code, self.move_comment)
-        counts, destmap, catmap = {}, {}, {}
-        catlist, nonemptypages = [], []
+        comment = i18n.twtranslate(self.site, self.move_comment)
+        counts = {}
+        nonemptypages = []
         redircat = pywikibot.Category(pywikibot.Link(self.cat_title, self.site))
 
         pywikibot.output(u"\nChecking %d category redirect pages"
@@ -344,8 +355,7 @@ class CategoryRedirectBot(pywikibot.Bot):
                                   self.catprefix + cat_name) not in catpages:
                 del record[cat_name]
 
-        pywikibot.output(u"")
-        pywikibot.output(u"Moving pages out of %s redirected categories."
+        pywikibot.output(u"\nMoving pages out of %s redirected categories."
                          % len(nonemptypages))
 
         for cat in pagegenerators.PreloadingGenerator(nonemptypages):
@@ -404,7 +414,7 @@ class CategoryRedirectBot(pywikibot.Bot):
                     newtext = newtext + oldtext.strip()
                     try:
                         cat.text = newtext
-                        cat.save(i18n.twtranslate(self.site.code,
+                        cat.save(i18n.twtranslate(self.site,
                                                   self.dbl_redir_comment))
                     except pywikibot.Error as e:
                         self.log_text.append("** Failed: %s" % e)
@@ -435,14 +445,14 @@ class CategoryRedirectBot(pywikibot.Bot):
         self.log_text.sort()
         self.problems.sort()
         newredirs.sort()
-        comment = i18n.twtranslate(self.site.code, self.maint_comment)
+        comment = i18n.twtranslate(self.site, self.maint_comment)
         self.log_page.text = (u"\n== %i-%02i-%02iT%02i:%02i:%02iZ ==\n"
-                              % time.gmtime()[:6]
-                              + u"\n".join(self.log_text)
-                              + u"\n* New redirects since last report:\n"
-                              + u"\n".join(newredirs)
-                              + u"\n" + u"\n".join(self.problems)
-                              + u"\n" + self.get_log_text())
+                              % time.gmtime()[:6] +
+                              u'\n'.join(self.log_text) +
+                              u'\n* New redirects since last report:\n' +
+                              u'\n'.join(newredirs) +
+                              u'\n' + u'\n'.join(self.problems) +
+                              u'\n' + self.get_log_text())
         self.log_page.save(comment)
         if self.edit_requests:
             edit_request_page.text = (self.edit_request_text

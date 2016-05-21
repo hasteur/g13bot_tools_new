@@ -1,77 +1,82 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """Text editor class for your favourite editor."""
+from __future__ import absolute_import, unicode_literals
 
 #
 # (C) Gerrit Holl, 2004
-# (C) Pywikibot team, 2004-2014
+# (C) Pywikibot team, 2004-2015
 #
 # Distributed under the terms of the MIT license.
 #
 __version__ = '$Id$'
 #
 
-import sys
-import os
-import tempfile
 import codecs
+import os
+import subprocess
+import tempfile
+
 import pywikibot
+
 from pywikibot import config
+from pywikibot.tools import deprecated
+
+try:
+    from pywikibot.userinterfaces import gui
+except ImportError as e:
+    gui = e
 
 
 class TextEditor(object):
 
     """Text editor."""
 
-    def command(self, tempFilename, text, jumpIndex=None):
+    def _command(self, file_name, text, jump_index=None):
         """Return editor selected in user-config.py."""
-        command = config.editor
-        if jumpIndex:
+        if jump_index:
             # Some editors make it possible to mark occurrences of substrings,
             # or to jump to the line of the first occurrence.
             # TODO: Find a better solution than hardcoding these, e.g. a config
             # option.
-            line = text[:jumpIndex].count('\n')
-            column = jumpIndex - (text[:jumpIndex].rfind('\n') + 1)
+            line = text[:jump_index].count('\n')
+            column = jump_index - (text[:jump_index].rfind('\n') + 1)
         else:
             line = column = 0
         # Linux editors. We use startswith() because some users might use
         # parameters.
         if config.editor.startswith('kate'):
-            command += " -l %i -c %i" % (line + 1, column + 1)
+            command = ['-l', '%i' % (line + 1), '-c', '%i' % (column + 1)]
         elif config.editor.startswith('gedit'):
-            command += " +%i" % (line + 1)  # seems not to support columns
+            command = ['+%i' % (line + 1)]  # seems not to support columns
         elif config.editor.startswith('emacs'):
-            command += " +%i" % (line + 1)  # seems not to support columns
+            command = ['+%i' % (line + 1)]  # seems not to support columns
         elif config.editor.startswith('jedit'):
-            command += " +line:%i" % (line + 1)  # seems not to support columns
+            command = ['+line:%i' % (line + 1)]  # seems not to support columns
         elif config.editor.startswith('vim'):
-            command += " +%i" % (line + 1)  # seems not to support columns
+            command = ['+%i' % (line + 1)]  # seems not to support columns
         elif config.editor.startswith('nano'):
-            command += " +%i,%i" % (line + 1, column + 1)
+            command = ['+%i,%i' % (line + 1, column + 1)]
         # Windows editors
         elif config.editor.lower().endswith('notepad++.exe'):
-            command += " -n%i" % (line + 1)  # seems not to support columns
+            command = ['-n%i' % (line + 1)]  # seems not to support columns
+        else:
+            command = []
 
-        command += ' %s' % tempFilename
-        pywikibot.log(u'Running editor: %s' % command)
+        # See T102465 for problems relating to using config.editor unparsed.
+        command = [config.editor] + command + [file_name]
+        pywikibot.log(u'Running editor: %s' % TextEditor._concat(command))
         return command
 
-    def convertLinebreaks(self, text):
-        """Convert line-breaks."""
-        if sys.platform == 'win32':
-            return text.replace('\r\n', '\n')
-        # TODO: Mac OS handling
-        return text
+    @staticmethod
+    def _concat(command):
+        return ' '.join("'{0}'".format(part) if ' ' in part else part
+                        for part in command)
 
-    def restoreLinebreaks(self, text):
-        """Restore line-breaks."""
-        if text is None:
-            return
-        if sys.platform == 'win32':
-            return text.replace('\n', '\r\n')
-        # TODO: Mac OS handling
-        return text
+    @deprecated('_command (should not be used from the outside)')
+    def command(self, tempFilename, text, jumpIndex=None):
+        """Return editor selected in user-config.py."""
+        return TextEditor._concat(self._command(tempFilename, text, jumpIndex))
 
     def edit(self, text, jumpIndex=None, highlight=None):
         """
@@ -89,39 +94,35 @@ class TextEditor(object):
             file in his text editor
         @rtype: unicode or None
         """
-        text = self.convertLinebreaks(text)
         if config.editor:
-            tempFilename = '%s.%s' % (tempfile.mktemp(),
+            handle, tempFilename = tempfile.mkstemp()
+            tempFilename = '%s.%s' % (tempFilename,
                                       config.editor_filename_extension)
-            with codecs.open(tempFilename, 'w',
-                             encoding=config.editor_encoding) as tempFile:
-                tempFile.write(text)
-            creationDate = os.stat(tempFilename).st_mtime
-            command = self.command(tempFilename, text, jumpIndex)
-            os.system(command)
-            lastChangeDate = os.stat(tempFilename).st_mtime
-            if lastChangeDate == creationDate:
-                # Nothing changed
-                return None
-            else:
-                with codecs.open(tempFilename, 'r',
-                                 encoding=config.editor_encoding) as temp_file:
-                    newcontent = temp_file.read()
+            try:
+                with codecs.open(tempFilename, 'w',
+                                 encoding=config.editor_encoding) as tempFile:
+                    tempFile.write(text)
+                creationDate = os.stat(tempFilename).st_mtime
+                subprocess.call(self._command(tempFilename, text, jumpIndex))
+                lastChangeDate = os.stat(tempFilename).st_mtime
+                if lastChangeDate == creationDate:
+                    # Nothing changed
+                    return None
+                else:
+                    with codecs.open(tempFilename, 'r',
+                                     encoding=config.editor_encoding) as temp_file:
+                        newcontent = temp_file.read()
+                    return newcontent
+            finally:
+                os.close(handle)
                 os.unlink(tempFilename)
-                return self.restoreLinebreaks(newcontent)
 
-        try:
-            import gui  # noqa
-        except ImportError as e:
+        if isinstance(gui, ImportError):
             raise pywikibot.Error(
                 'Could not load GUI modules: %s\nNo editor available.\n'
                 'Set your favourite editor in user-config.py "editor", '
                 'or install python packages tkinter and idlelib, which '
                 'are typically part of Python but may be packaged separately '
-                'on your platform.\n' % e)
+                'on your platform.\n' % gui)
 
-        return self.restoreLinebreaks(
-            pywikibot.ui.editText(
-                text,
-                jumpIndex=jumpIndex,
-                highlight=highlight))
+        return pywikibot.ui.editText(text, jumpIndex=jumpIndex, highlight=highlight)

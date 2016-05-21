@@ -16,11 +16,13 @@ Command-line arguments:
                   where all words of the title start with an uppercase
                   character and the remaining characters are lowercase.
 
-Example: "python capitalize_redirects.py -start:B -always"
+Example:
+
+    python pwb.py capitalize_redirects -start:B -always
 """
 #
 # (C) Yrithinnd, 2006
-# (C) Pywikibot team, 2007-2014
+# (C) Pywikibot team, 2007-2015
 #
 # Distributed under the terms of the MIT license.
 #
@@ -29,64 +31,62 @@ Example: "python capitalize_redirects.py -start:B -always"
 #
 # Automatically converted from compat branch by compat2core.py script
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 import pywikibot
-from pywikibot import i18n, pagegenerators, Bot
+from pywikibot import i18n, pagegenerators
+from pywikibot.bot import (
+    MultipleSitesBot, FollowRedirectPageBot, ExistingPageBot
+)
 
 docuReplacements = {
     '&params;': pagegenerators.parameterHelp
 }
 
 
-class CapitalizeBot(Bot):
+class CapitalizeBot(MultipleSitesBot, FollowRedirectPageBot, ExistingPageBot):
 
     """Capitalization Bot."""
 
     def __init__(self, generator, **kwargs):
+        """Constructor.
+
+        Parameters:
+            @param generator: The page generator that determines on which pages
+                              to work.
+            @kwarg titlecase: create a titlecased redirect page instead a
+                              capitalized one.
+        """
         self.availableOptions.update({
             'titlecase': False,
         })
 
-        super(CapitalizeBot, self).__init__(**kwargs)
-        self.generator = generator
+        super(CapitalizeBot, self).__init__(generator=generator, **kwargs)
 
-    def treat(self, page):
-        if not page.exists():
-            return
-        if page.isRedirectPage():
-            page = page.getRedirectTarget()
-        page_t = page.title()
-        self.current_page = page
+    def treat_page(self):
+        """Capitalize redirects of the current page."""
+        page_t = self.current_page.title()
+        site = self.current_page.site
         if self.getOption('titlecase'):
-            page_cap = pywikibot.Page(page.site, page_t.title())
+            page_cap = pywikibot.Page(site, page_t.title())
         else:
-            page_cap = pywikibot.Page(page.site, page_t.capitalize())
+            page_cap = pywikibot.Page(site, page_t.capitalize())
         if page_cap.exists():
             pywikibot.output(u'%s already exists, skipping...\n'
                              % page_cap.title(asLink=True))
         else:
             pywikibot.output(u'%s doesn\'t exist'
                              % page_cap.title(asLink=True))
-            if not self.getOption('always'):
-                choice = pywikibot.input_choice(
-                    u'Do you want to create a redirect?',
-                    [('Yes', 'y'), ('No', 'n'), ('All', 'a')], 'n')
-                if choice == 'a':
-                    self.options['always'] = True
-            if self.getOption('always') or choice == 'y':
+            if self.user_confirm('Do you want to create a redirect?'):
                 comment = i18n.twtranslate(
-                    page.site,
+                    site,
                     'capitalize_redirects-create-redirect',
                     {'to': page_t})
-                page_cap.text = u"#%s %s" % (page.site.redirect(),
-                                             page.title(asLink=True,
-                                                        textlink=True))
-                try:
-                    page_cap.save(comment)
-                except:
-                    pywikibot.output(u"An error occurred, skipping...")
+                page_cap.set_redirect_target(self.current_page, create=True,
+                                             summary=comment)
 
 
 def main(*args):
@@ -116,8 +116,10 @@ def main(*args):
         preloadingGen = pagegenerators.PreloadingGenerator(gen)
         bot = CapitalizeBot(preloadingGen, **options)
         bot.run()
+        return True
     else:
-        pywikibot.showHelp()
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
 if __name__ == "__main__":
     main()

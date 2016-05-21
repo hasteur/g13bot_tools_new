@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8  -*-
 """Script that updates the language lists in Wikimedia family files."""
 #
@@ -6,15 +7,19 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-import re
 import codecs
-from xml.etree import cElementTree
+import re
 import sys
 
+from xml.etree import cElementTree
+
 import pywikibot
+
 from pywikibot.family import Family
 
 if sys.version_info[0] > 2:
@@ -36,10 +41,11 @@ familiesDict = {
     'wiktionary':   'wiktionaries',
 }
 
-exceptions = ['www']
+exceptions = ['-']
 
 
 def update_family(families):
+    """Update family files."""
     for family in families or familiesDict.keys():
         pywikibot.output('\nChecking family %s:' % family)
 

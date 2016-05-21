@@ -24,17 +24,21 @@ This script understands various command-line arguments:
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
-import pywikibot
-from pywikibot import pagegenerators, WikidataBot
 from datetime import timedelta
+
+import pywikibot
+
+from pywikibot import pagegenerators, WikidataBot
 
 
 class NewItemRobot(WikidataBot):
 
-    """ A bot to create new items. """
+    """A bot to create new items."""
 
     def __init__(self, generator, **kwargs):
         """Only accepts options defined in availableOptions."""
@@ -59,7 +63,7 @@ class NewItemRobot(WikidataBot):
                          % (self.lastEdit, self.lastEditBefore.isoformat()))
 
     def treat(self, page, item):
-        """ Treat page/item. """
+        """Treat page/item."""
         if item and item.exists():
             pywikibot.output(u'%s already has an item: %s.' % (page, item))
             if self.getOption('touch'):
@@ -78,8 +82,7 @@ class NewItemRobot(WikidataBot):
                 % (page, page.editTime().isoformat()))
             return
 
-        rev = page.getVersionHistory(reverseOrder=True, total=1)[0]
-        if rev.timestamp > self.pageAgeBefore:
+        if page.oldest_revision.timestamp > self.pageAgeBefore:
             pywikibot.output(
                 u'Page creation of %s on %s is too recent. Skipping.'
                 % (page, page.editTime().isoformat()))
@@ -143,11 +146,12 @@ def main(*args):
 
     generator = gen.getCombinedGenerator()
     if not generator:
-        pywikibot.showHelp()
-        return
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
     bot = NewItemRobot(generator, **options)
     bot.run()
+    return True
 
 if __name__ == "__main__":
     main()

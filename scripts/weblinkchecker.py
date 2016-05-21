@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8  -*-
 """
 This bot is used for checking external links found at the wiki.
@@ -52,8 +53,9 @@ Furthermore, the following command line parameters are supported:
 
 -notalk      Overrides the report_dead_links_on_talk config variable, disabling
              the feature.
--day         the first time found dead link longer than x day ago, it should
-             probably be fixed or removed. if no set, default is 7 day.
+
+-day         Do not report broken link if the link is there only since
+             x days or less. If not set, the default is 7 days.
 
 The following config variables are supported:
 
@@ -70,55 +72,78 @@ report_dead_links_on_talk - If set to true, causes the script to report dead
                             the linked page has been unavailable at least two
                             times during a timespan of at least one week.
 
+weblink_dead_days         - sets the timespan (default: one week) after which
+                            a dead link will be reported
+
 Syntax examples:
-    python weblinkchecker.py -start:!
+    python pwb.py weblinkchecker -start:!
         Loads all wiki pages in alphabetical order using the Special:Allpages
         feature.
 
-    python weblinkchecker.py -start:Example_page
+    python pwb.py weblinkchecker -start:Example_page
         Loads all wiki pages using the Special:Allpages feature, starting at
         "Example page"
 
-    python weblinkchecker.py -weblink:www.example.org
+    python pwb.py weblinkchecker -weblink:www.example.org
         Loads all wiki pages that link to www.example.org
 
-    python weblinkchecker.py Example page
+    python pwb.py weblinkchecker Example page
         Only checks links found in the wiki page "Example page"
 
-    python weblinkchecker.py -repeat
+    python pwb.py weblinkchecker -repeat
         Loads all wiki pages where dead links were found during a prior run
 """
-
 #
 # (C) Daniel Herding, 2005
-# (C) Pywikibot team, 2005-2014
+# (C) Pywikibot team, 2005-2016
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
-import re
 import codecs
+import datetime
 import pickle
+import re
 import socket
+import sys
 import threading
 import time
-import sys
+
+from functools import partial
+from warnings import warn
+
+try:
+    import memento_client
+except ImportError as e:
+    memento_client = e
 
 import pywikibot
-from pywikibot import i18n, config, pagegenerators, textlib, xmlreader, weblib
 
-# TODO: Convert to httlib2
+from pywikibot import comms, i18n, config, pagegenerators, textlib, weblib
+
+from pywikibot.bot import ExistingPageBot, SingleSiteBot
+from pywikibot.pagegenerators import (
+    XMLDumpPageGenerator as _XMLDumpPageGenerator,
+)
+from pywikibot.tools import deprecated
+from pywikibot.tools.formatter import color_format
+
+import requests
+
 if sys.version_info[0] > 2:
+    import http.client as httplib
     import urllib.parse as urlparse
     import urllib.request as urllib
-    import http.client as httplib
+
     basestring = (str, )
     unicode = str
 else:
-    import urlparse
-    import urllib
     import httplib
+    import urllib
+    import urlparse
 
 docuReplacements = {
     '&params;': pagegenerators.parameterHelp
@@ -128,26 +153,67 @@ ignorelist = [
     # Officially reserved for testing, documentation, etc. in
     # https://tools.ietf.org/html/rfc2606#page-2
     # top-level domains:
-    re.compile('.*[\./@]test(/.*)?'),
-    re.compile('.*[\./@]example(/.*)?'),
-    re.compile('.*[\./@]invalid(/.*)?'),
-    re.compile('.*[\./@]localhost(/.*)?'),
+    re.compile(r'.*[\./@]test(/.*)?'),
+    re.compile(r'.*[\./@]example(/.*)?'),
+    re.compile(r'.*[\./@]invalid(/.*)?'),
+    re.compile(r'.*[\./@]localhost(/.*)?'),
     # second-level domains:
-    re.compile('.*[\./@]example\.com(/.*)?'),
-    re.compile('.*[\./@]example\.net(/.*)?'),
-    re.compile('.*[\./@]example\.org(/.*)?'),
+    re.compile(r'.*[\./@]example\.com(/.*)?'),
+    re.compile(r'.*[\./@]example\.net(/.*)?'),
+    re.compile(r'.*[\./@]example\.org(/.*)?'),
 
     # Other special cases
-    re.compile('.*[\./@]gso\.gbv\.de(/.*)?'),  # bot somehow can't handle their redirects
-    re.compile('.*[\./@]berlinonline\.de(/.*)?'),  # a de: user wants to fix them by hand and doesn't want them to be deleted, see [[de:Benutzer:BLueFiSH.as/BZ]].
-    re.compile('.*[\./@]bodo\.kommune\.no(/.*)?'),  # bot can't handle their redirects
-    re.compile('.*[\./@]jpl\.nasa\.gov(/.*)?'),  # bot rejected on the site
-    re.compile('.*[\./@]itis\.gov(/.*)?'),  # bot rejected on the site
-    re.compile('.*[\./@]cev\.lu(/.*)?'),  # bot rejected on the site
-    re.compile('.*[\./@]science\.ksc\.nasa\.gov(/.*)?'),  # very slow response resulting in bot error
-    re.compile('.*[\./@]britannica\.com(/.*)?'),  # HTTP redirect loop
-    re.compile('.*[\./@]quickfacts\.census\.gov(/.*)?'),  # bot rejected on the site
+    re.compile(r'.*[\./@]berlinonline\.de(/.*)?'),
+    # above entry to be manually fixed per request at [[de:Benutzer:BLueFiSH.as/BZ]]
+    # bot can't handle their redirects:
+
+    # bot rejected on the site, already archived
+    re.compile(r'.*[\./@]web\.archive\.org(/.*)?'),
+
+    # Ignore links containing * in domain name
+    # as they are intentionally fake
+    re.compile(r'https?\:\/\/\*(/.*)?'),
 ]
+
+
+def _get_closest_memento_url(url, when=None, timegate_uri=None):
+    """Get most recent memento for url."""
+    if isinstance(memento_client, ImportError):
+        raise memento_client
+
+    if not when:
+        when = datetime.datetime.now()
+
+    mc = memento_client.MementoClient()
+    if timegate_uri:
+        mc.timegate_uri = timegate_uri
+
+    memento_info = mc.get_memento_info(url, when)
+    mementos = memento_info.get('mementos')
+    if not mementos:
+        raise Exception(
+            'mementos not found for {0} via {1}'.format(url, timegate_uri))
+    if 'closest' not in mementos:
+        raise Exception(
+            'closest memento not found for {0} via {1}'.format(
+                url, timegate_uri))
+    if 'uri' not in mementos['closest']:
+        raise Exception(
+            'closest memento uri not found for {0} via {1}'.format(
+                url, timegate_uri))
+    return mementos['closest']['uri'][0]
+
+
+def get_archive_url(url):
+    """Get archive URL."""
+    try:
+        return _get_closest_memento_url(
+            url,
+            timegate_uri='http://web.archive.org/web/')
+    except Exception:
+        return _get_closest_memento_url(
+            url,
+            timegate_uri='http://timetravel.mementoweb.org/webcite/timegate/')
 
 
 def weblinksIn(text, withoutBracketed=False, onlyBracketed=False):
@@ -157,6 +223,9 @@ def weblinksIn(text, withoutBracketed=False, onlyBracketed=False):
     TODO: move to textlib
     """
     text = textlib.removeDisabledParts(text)
+
+    # Ignore links in fullurl template
+    text = re.sub(r'{{\s?fullurl:.[^}]*}}', '', text)
 
     # MediaWiki parses templates before parsing external links. Thus, there
     # might be a | or a } directly after a URL which does not belong to
@@ -189,48 +258,8 @@ def weblinksIn(text, withoutBracketed=False, onlyBracketed=False):
             yield m.group('urlb')
 
 
-class XmlDumpPageGenerator:
-
-    """Xml generator that yiels pages containing a web link."""
-
-    def __init__(self, xmlFilename, xmlStart, namespaces):
-        self.xmlStart = xmlStart
-        self.namespaces = namespaces
-        self.skipping = bool(xmlStart)
-        self.site = pywikibot.Site()
-
-        dump = xmlreader.XmlDump(xmlFilename)
-        self.parser = dump.parse()
-
-    def __iter__(self):
-        return self
-
-    def next(self):
-        try:
-            for entry in self.parser:
-                if self.skipping:
-                    if entry.title != self.xmlStart:
-                        continue
-                    self.skipping = False
-                page = pywikibot.Page(self.site, entry.title)
-                if not self.namespaces == []:
-                    if page.namespace() not in self.namespaces:
-                        continue
-                found = False
-                for url in weblinksIn(entry.text):
-                    found = True
-                if found:
-                    return page
-        except KeyboardInterrupt:
-            try:
-                if not self.skipping:
-                    pywikibot.output(
-                        u'To resume, use "-xmlstart:%s" on the command line.'
-                        % entry.title)
-            except NameError:
-                pass
-
-    __next__ = next
+XmlDumpPageGenerator = partial(
+    _XMLDumpPageGenerator, text_predicate=weblinksIn)
 
 
 class NotAnURLError(BaseException):
@@ -238,6 +267,7 @@ class NotAnURLError(BaseException):
     """The link is not an URL."""
 
 
+@deprecated('requests')
 class LinkChecker(object):
 
     """
@@ -262,15 +292,13 @@ class LinkChecker(object):
         redirectChain is a list of redirects which were resolved by
         resolveRedirect(). This is needed to detect redirect loops.
         """
+        self._user_agent = comms.http.get_fake_user_agent()
         self.url = url
         self.serverEncoding = serverEncoding
         self.header = {
-            # 'User-agent': pywikibot.useragent,
-            # we fake being Firefox because some webservers block unknown
-            # clients, e.g. https://images.google.de/images?q=Albit gives a 403
-            # when using the PyWikipediaBot user agent.
-            'User-agent': 'Mozilla/5.0 (X11; U; Linux i686; de; rv:1.8) Gecko/20051128 SUSE/1.5-0.1 Firefox/1.5',
-            'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
+            'User-agent': self._user_agent,
+            'Accept': 'text/xml,application/xml,application/xhtml+xml,'
+                      'text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
             'Accept-Language': 'de-de,de;q=0.8,en-us;q=0.5,en;q=0.3',
             'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
             'Keep-Alive': '30',
@@ -281,6 +309,7 @@ class LinkChecker(object):
         self.HTTPignore = HTTPignore
 
     def getConnection(self):
+        """Get a connection."""
         if self.scheme == 'http':
             return httplib.HTTPConnection(self.host)
         elif self.scheme == 'https':
@@ -289,6 +318,7 @@ class LinkChecker(object):
             raise NotAnURLError(self.url)
 
     def getEncodingUsedByServer(self):
+        """Get encodung used by server."""
         if not self.serverEncoding:
             try:
                 pywikibot.output(
@@ -310,6 +340,7 @@ class LinkChecker(object):
         return self.serverEncoding
 
     def readEncodingFromResponse(self, response):
+        """Read encoding from response."""
         if not self.serverEncoding:
             try:
                 ct = response.getheader('Content-Type')
@@ -320,6 +351,7 @@ class LinkChecker(object):
                 pass
 
     def changeUrl(self, url):
+        """Change url."""
         self.url = url
         # we ignore the fragment
         (self.scheme, self.host, self.path, self.query,
@@ -430,7 +462,7 @@ class LinkChecker(object):
                 try:
                     msg = error[1]
                 except IndexError:
-                    print(u'### DEBUG information for #2972249')
+                    pywikibot.output('### DEBUG information for T57282')
                     raise IndexError(type(error))
             # TODO: decode msg. On Linux, it's encoded in UTF-8.
             # How is it encoded in Windows? Or can we somehow just
@@ -500,16 +532,27 @@ class LinkChecker(object):
 
 class LinkCheckThread(threading.Thread):
 
-    """ A thread responsible for checking one URL.
+    """A thread responsible for checking one URL.
 
     After checking the page, it will die.
     """
 
     def __init__(self, page, url, history, HTTPignore, day):
+        """Constructor."""
         threading.Thread.__init__(self)
         self.page = page
         self.url = url
+        self._user_agent = comms.http.get_fake_user_agent()
         self.history = history
+        self.header = {
+            'User-agent': self._user_agent,
+            'Accept': 'text/xml,application/xml,application/xhtml+xml,'
+                      'text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
+            'Accept-Language': 'de-de,de;q=0.8,en-us;q=0.5,en;q=0.3',
+            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+            'Keep-Alive': '30',
+            'Connection': 'keep-alive',
+        }
         # identification for debugging purposes
         self.setName((u'%s - %s' % (page.title(), url)).encode('utf-8',
                                                                'replace'))
@@ -517,19 +560,25 @@ class LinkCheckThread(threading.Thread):
         self.day = day
 
     def run(self):
-        linkChecker = LinkChecker(self.url, HTTPignore=self.HTTPignore)
+        """Run the bot."""
+        ok = False
         try:
-            ok, message = linkChecker.check()
-        except NotAnURLError:
-            ok = False
+            header = self.header
+            timeout = pywikibot.config.socket_timeout
+            r = requests.get(self.url, headers=header, timeout=timeout)
+        except requests.exceptions.InvalidURL:
             message = i18n.twtranslate(self.page.site,
                                        'weblinkchecker-badurl_msg',
                                        {'URL': self.url})
-
         except:
             pywikibot.output('Exception while processing URL %s in page %s'
                              % (self.url, self.page.title()))
             raise
+        if (r.status_code == requests.codes.ok and
+                str(r.status_code) not in self.HTTPignore):
+            ok = True
+        else:
+            message = '{0} {1}'.format(r.status_code, r.reason)
         if ok:
             if self.history.setLinkAlive(self.url):
                 pywikibot.output('*Link to %s in [[%s]] is back alive.'
@@ -537,10 +586,11 @@ class LinkCheckThread(threading.Thread):
         else:
             pywikibot.output('*[[%s]] links to %s - %s.'
                              % (self.page.title(), self.url, message))
-            self.history.setLinkDead(self.url, message, self.page, self.day)
+            self.history.setLinkDead(self.url, message, self.page,
+                                     config.weblink_dead_days)
 
 
-class History:
+class History(object):
 
     """
     Store previously found dead links.
@@ -564,9 +614,13 @@ class History:
 
     """
 
-    def __init__(self, reportThread):
+    def __init__(self, reportThread, site=None):
+        """Constructor."""
         self.reportThread = reportThread
-        self.site = pywikibot.Site()
+        if not site:
+            self.site = pywikibot.Site()
+        else:
+            self.site = site
         self.semaphore = threading.Semaphore()
         self.datfilename = pywikibot.config.datafilepath(
             'deadlinks', 'deadlinks-%s-%s.dat' % (self.site.family.name, self.site.code))
@@ -608,7 +662,7 @@ class History:
             self.reportThread.report(url, errorReport, containingPage,
                                      archiveURL)
 
-    def setLinkDead(self, url, error, page, day):
+    def setLinkDead(self, url, error, page, weblink_dead_days):
         """Add the fact that the link was found dead to the .dat file."""
         self.semaphore.acquire()
         now = time.time()
@@ -622,9 +676,17 @@ class History:
             # if the first time we found this link longer than x day ago
             # (default is a week), it should probably be fixed or removed.
             # We'll list it in a file so that it can be removed manually.
-            if timeSinceFirstFound > 60 * 60 * 24 * day:
+            if timeSinceFirstFound > 60 * 60 * 24 * weblink_dead_days:
                 # search for archived page
-                archiveURL = weblib.getInternetArchiveURL(url)
+                try:
+                    archiveURL = get_archive_url(url)
+                except Exception as e:
+                    pywikibot.warning(
+                        'get_closest_memento_url({0}) failed: {1}'.format(
+                            url, e))
+                    archiveURL = None
+                if archiveURL is None:
+                    archiveURL = weblib.getInternetArchiveURL(url)
                 if archiveURL is None:
                     archiveURL = weblib.getWebCitationURL(url)
                 self.log(url, error, page, archiveURL)
@@ -653,7 +715,7 @@ class History:
             return False
 
     def save(self):
-        """ Save the .dat file to disk. """
+        """Save the .dat file to disk."""
         with open(self.datfilename, 'wb') as f:
             pickle.dump(self.historyDict, f, protocol=config.pickle_protocol)
 
@@ -668,6 +730,7 @@ class DeadLinkReportThread(threading.Thread):
     """
 
     def __init__(self):
+        """Constructor."""
         threading.Thread.__init__(self)
         self.semaphore = threading.Semaphore()
         self.queue = []
@@ -681,13 +744,16 @@ class DeadLinkReportThread(threading.Thread):
         self.semaphore.release()
 
     def shutdown(self):
+        """Finish thread."""
         self.finishing = True
 
     def kill(self):
+        """Kill thread."""
         # TODO: remove if unneeded
         self.killed = True
 
     def run(self):
+        """Run thread."""
         while not self.killed:
             if len(self.queue) == 0:
                 if self.finishing:
@@ -699,16 +765,16 @@ class DeadLinkReportThread(threading.Thread):
                 (url, errorReport, containingPage, archiveURL) = self.queue[0]
                 self.queue = self.queue[1:]
                 talkPage = containingPage.toggleTalkPage()
-                pywikibot.output(
-                    u'\03{lightaqua}** Reporting dead link on %s...\03{default}'
-                    % talkPage.title(asLink=True))
+                pywikibot.output(color_format(
+                    '{lightaqua}** Reporting dead link on {0}...{default}',
+                    talkPage.title(asLink=True)))
                 try:
                     content = talkPage.get() + "\n\n"
                     if url in content:
-                        pywikibot.output(
-                            u'\03{lightaqua}** Dead link seems to have already '
-                            u'been reported on %s\03{default}'
-                            % talkPage.title(asLink=True))
+                        pywikibot.output(color_format(
+                            '{lightaqua}** Dead link seems to have already '
+                            'been reported on {0}{default}',
+                            talkPage.title(asLink=True)))
                         self.semaphore.release()
                         continue
                 except (pywikibot.NoPage, pywikibot.IsRedirectPage):
@@ -747,15 +813,15 @@ class DeadLinkReportThread(threading.Thread):
                 try:
                     talkPage.put(content, comment)
                 except pywikibot.SpamfilterError as error:
-                    pywikibot.output(
-                        u'\03{lightaqua}** SpamfilterError while trying to '
-                        u'change %s: %s\03{default}'
-                        % (talkPage.title(asLink=True), error.url))
+                    pywikibot.output(color_format(
+                        '{lightaqua}** SpamfilterError while trying to '
+                        'change {0}: {1}{default}',
+                        talkPage.title(asLink=True), error.url))
 
                 self.semaphore.release()
 
 
-class WeblinkCheckerRobot:
+class WeblinkCheckerRobot(SingleSiteBot, ExistingPageBot):
 
     """
     Bot which will search for dead weblinks.
@@ -763,8 +829,11 @@ class WeblinkCheckerRobot:
     It uses several LinkCheckThreads at once to process pages from generator.
     """
 
-    def __init__(self, generator, HTTPignore=None, day=7):
-        self.generator = generator
+    def __init__(self, generator, HTTPignore=None, day=7, site=True):
+        """Constructor."""
+        super(WeblinkCheckerRobot, self).__init__(
+            generator=generator, site=site)
+
         if config.report_dead_links_on_talk:
             pywikibot.log("Starting talk page thread")
             reportThread = DeadLinkReportThread()
@@ -773,23 +842,17 @@ class WeblinkCheckerRobot:
             reportThread.start()
         else:
             reportThread = None
-        self.history = History(reportThread)
+        self.history = History(reportThread, site=self.site)
         if HTTPignore is None:
             self.HTTPignore = []
         else:
             self.HTTPignore = HTTPignore
         self.day = day
 
-    def run(self):
-        for page in self.generator:
-            self.checkLinksIn(page)
-
-    def checkLinksIn(self, page):
-        try:
-            text = page.get()
-        except pywikibot.NoPage:
-            pywikibot.output(u'%s does not exist.' % page.title())
-            return
+    def treat_page(self):
+        """Process one page."""
+        page = self.current_page
+        text = page.get()
         for url in weblinksIn(text):
             ignoreUrl = False
             for ignoreR in ignorelist:
@@ -834,8 +897,9 @@ def countLinkCheckThreads():
     return i
 
 
+@deprecated('requests')
 def check(url):
-    """Peform a check on URL."""
+    """DEPRECATED: Use requests instead. Perform a check on URL."""
     c = LinkChecker(url)
     return c.check()
 
@@ -851,11 +915,10 @@ def main(*args):
     """
     gen = None
     xmlFilename = None
-    # Which namespaces should be processed?
-    # default to [] which means all namespaces will be processed
-    namespaces = []
     HTTPignore = []
-    day = 7
+
+    if isinstance(memento_client, ImportError):
+        warn('memento_client not imported: %s' % memento_client, ImportWarning)
 
     # Process global args and prepare generator args parser
     local_args = pywikibot.handle_args(args)
@@ -866,17 +929,12 @@ def main(*args):
             config.report_dead_links_on_talk = True
         elif arg == '-notalk':
             config.report_dead_links_on_talk = False
-        elif arg.startswith('-namespace:'):
-            try:
-                namespaces.append(int(arg[11:]))
-            except ValueError:
-                namespaces.append(arg[11:])
         elif arg == '-repeat':
             gen = RepeatPageGenerator()
         elif arg.startswith('-ignore:'):
             HTTPignore.append(int(arg[8:]))
         elif arg.startswith('-day:'):
-            day = int(arg[5:])
+            config.weblink_dead_days = int(arg[5:])
         elif arg.startswith('-xmlstart'):
             if len(arg) == 9:
                 xmlStart = pywikibot.input(
@@ -896,19 +954,17 @@ def main(*args):
             xmlStart
         except NameError:
             xmlStart = None
-        gen = XmlDumpPageGenerator(xmlFilename, xmlStart, namespaces)
+        gen = XmlDumpPageGenerator(xmlFilename, xmlStart, genFactory.namespaces)
 
     if not gen:
         gen = genFactory.getCombinedGenerator()
     if gen:
-        if namespaces != []:
-            gen = pagegenerators.NamespaceFilterPageGenerator(gen, namespaces)
         # fetch at least 240 pages simultaneously from the wiki, but more if
         # a high thread number is set.
         pageNumber = max(240, config.max_external_links * 2)
-        gen = pagegenerators.PreloadingGenerator(gen, step=pageNumber)
+        gen = pagegenerators.PreloadingGenerator(gen, groupsize=pageNumber)
         gen = pagegenerators.RedirectFilterPageGenerator(gen)
-        bot = WeblinkCheckerRobot(gen, HTTPignore, day)
+        bot = WeblinkCheckerRobot(gen, HTTPignore, config.weblink_dead_days)
         try:
             bot.run()
         finally:
@@ -941,8 +997,10 @@ def main(*args):
                     bot.history.reportThread.kill()
             pywikibot.output(u'Saving history...')
             bot.history.save()
+        return True
     else:
-        pywikibot.showHelp()
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikimedia Commons."""
+from __future__ import absolute_import, unicode_literals
 
 __version__ = '$Id$'
 
@@ -7,17 +8,15 @@ from pywikibot import family
 
 
 # The Wikimedia Commons family
-class Family(family.WikimediaFamily):
+class Family(family.WikimediaOrgFamily):
 
     """Family class for Wikimedia Commons."""
+
+    name = 'commons'
 
     def __init__(self):
         """Constructor."""
         super(Family, self).__init__()
-        self.name = 'commons'
-        self.langs = {
-            'commons': 'commons.wikimedia.org',
-        }
 
         self.interwiki_forward = 'wikipedia'
 
@@ -42,14 +41,10 @@ class Family(family.WikimediaFamily):
         }
 
         self.disambcatname = {
-            'commons':  u'Disambiguation'
+            'commons': 'Disambiguation'
         }
 
         # Subpages for documentation.
         self.doc_subpages = {
             '_default': ((u'/doc', ), ['commons']),
         }
-
-    def shared_data_repository(self, code, transcluded=False):
-        """Return the shared data repository for this site."""
-        return ('wikidata', 'wikidata')

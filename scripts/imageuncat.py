@@ -5,20 +5,43 @@ Program to add uncat template to images without categories at commons.
 
 See imagerecat.py (still working on that one) to add these images to categories.
 
+This script is working on the given site, so if the commons should be handled,
+the site commons should be given and not a Wikipedia or similar.
+
+-yesterday        Go through all uploads from yesterday. (Deprecated here, moved
+                  to pagegenerators)
+
+-recentchanges    Go through the changes made from 'offset' minutes with 'duration'
+                  minutes of timespan. It must be given two arguments as
+                  '-recentchanges:offset,duration'
+
+                  Default value of offset is 120, and that of duration is 70
+
+&params;
 """
 #
 # (C) Multichill, 2008
-# (C) Pywikibot team, 2009-2014
+# (C) Pywikibot team, 2009-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 #
 
 from datetime import timedelta
 
 import pywikibot
+from pywikibot.exceptions import ArgumentDeprecationWarning
 from pywikibot import pagegenerators
+from pywikibot.tools import (
+    issue_deprecation_warning, deprecated
+)
+
+docuReplacements = {
+    '&params;': pagegenerators.parameterHelp,
+}
 
 # Probably unneeded because these are hidden categories. Have to figure it out.
 ignoreCategories = [u'[[Category:CC-BY-SA-3.0]]',
@@ -1231,7 +1254,8 @@ ignoreTemplates = [u'1000Bit',
                    u'Zxx',
                    ]
 
-puttext = u'\n{{Uncategorized|year={{subst:CURRENTYEAR}}|month={{subst:CURRENTMONTHNAME}}|day={{subst:CURRENTDAY}}}}'
+puttext = ('\n{{Uncategorized|year={{subst:CURRENTYEAR}}|'
+           'month={{subst:CURRENTMONTHNAME}}|day={{subst:CURRENTDAY}}}}')
 putcomment = u'Please add categories to this image'
 
 
@@ -1245,9 +1269,10 @@ def uploadedYesterday(site):
     yesterday = today + timedelta(days=-1)
 
     for logentry in site.logevents(logtype='upload', start=yesterday, end=today, reverse=True):
-        yield logentry.title()
+        yield logentry.page()
 
 
+@deprecated('RecentChangesPageGenerator')
 def recentChanges(site=None, delay=0, block=70):
     """
     Return a pagegenerator containing all the images edited in a certain timespan.
@@ -1331,23 +1356,51 @@ def main(*args):
 
     local_args = pywikibot.handle_args(args)
 
-    # use the default imagerepository normally commons
-    site = pywikibot.Site().image_repository()
+    site = pywikibot.Site()
+
+    if site.code != 'commons' or site.family.name != 'commons':
+        pywikibot.warning('This script is primarily written for Wikimedia '
+                          'Commons, but has been invoked with site {0}. It '
+                          'might work for other sites but there is no '
+                          'guarantee that it does the right thing.'.format(site))
+        choice = pywikibot.input_choice(
+            'How do you want to continue?',
+            (('Continue using {0}'.format(site), 'c'),
+             ('Switch to Wikimedia Commons', 's'),
+             ('Quit', 'q')),
+            automatic_quit=False)
+        if choice == 's':
+            site = pywikibot.Site('commons', 'commons')
+        elif choice == 'q':
+            return False
 
     genFactory = pagegenerators.GeneratorFactory(site)
 
     for arg in local_args:
+        param_arg, sep, param_value = arg.partition(':')
+        if param_value == '':
+            param_value = None
         if arg.startswith('-yesterday'):
             generator = uploadedYesterday(site)
+            issue_deprecation_warning(
+                'The usage of "-yesterday"',
+                '-logevents:"upload,,YYYYMMDD,YYYYMMDD"',
+                2, ArgumentDeprecationWarning)
         elif arg.startswith('-recentchanges'):
-            generator = recentChanges(site=site, delay=120)
+            if param_value is None:
+                arg = arg + ':120,70'
+                issue_deprecation_warning(
+                    '-recentchanges',
+                    '-recentchanges:offset,duration',
+                    2, ArgumentDeprecationWarning)
+            genFactory.handleArg(arg)
         else:
             genFactory.handleArg(arg)
 
     generator = genFactory.getCombinedGenerator(gen=generator)
     if not generator:
-        pywikibot.output(
-            u'You have to specify the generator you want to use for the program!')
+        pywikibot.bot.suggest_help(missing_generator=True)
+        return False
     else:
         pregenerator = pagegenerators.PreloadingGenerator(generator)
         site.login()
@@ -1357,6 +1410,7 @@ def main(*args):
                     and (not page.isRedirectPage()):
                 if isUncat(page):
                     addUncat(page)
+        return True
 
 if __name__ == "__main__":
     main()

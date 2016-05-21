@@ -5,11 +5,15 @@
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import pywikibot
 
-from tests.aspects import unittest, TestCase
+from pywikibot.tools import UnicodeType as unicode
+
+from tests.aspects import unittest, TestCase, DeprecationTestCase
 
 
 class TestShareFiles(TestCase):
@@ -38,6 +42,7 @@ class TestShareFiles(TestCase):
     cached = True
 
     def testSharedOnly(self):
+        """Test fileIsShared() on file page with shared file only."""
         title = 'File:Sepp Maier 1.JPG'
 
         commons = self.get_site('commons')
@@ -59,6 +64,7 @@ class TestShareFiles(TestCase):
         self.assertRaises(pywikibot.NoPage, itwp_file.get)
 
     def testLocalOnly(self):
+        """Test fileIsShared() on file page with local file only."""
         title = 'File:April Fools Day Adminship discussion (2005).png'
 
         commons = self.get_site('commons')
@@ -80,6 +86,7 @@ class TestShareFiles(TestCase):
         self.assertRaises(pywikibot.NoPage, commons_file.get)
 
     def testOnBoth(self):
+        """Test fileIsShared() on file page with both local and shared file."""
         title = 'File:Pulsante spam.png'
 
         commons = self.get_site('commons')
@@ -112,6 +119,65 @@ class TestShareFiles(TestCase):
         commons_file = pywikibot.FilePage(commons, title)
         self.assertEqual(testwp_file.fileUrl(),
                          commons_file.fileUrl())
+
+
+class TestFilePage(TestCase):
+
+    """Test FilePage.latest_revision_info.
+
+    These tests cover exceptions for all properties and methods
+    in FilePage that rely on site.loadimageinfo.
+
+    """
+
+    family = 'wikipedia'
+    code = 'test'
+
+    cached = True
+
+    def test_file_info_with_no_page(self):
+        """FilePage:latest_file_info raises NoPage for non existing pages."""
+        site = self.get_site()
+        image = pywikibot.FilePage(site, u'File:NoPage')
+        self.assertFalse(image.exists())
+        with self.assertRaises(pywikibot.NoPage):
+            image = image.latest_file_info
+
+    def test_file_info_with_no_file(self):
+        """FilePage:latest_file_info raises PagerelatedError if no file is present."""
+        site = self.get_site()
+        image = pywikibot.FilePage(site, u'File:Test with no image')
+        self.assertTrue(image.exists())
+        with self.assertRaises(pywikibot.PageRelatedError):
+            image = image.latest_file_info
+
+
+class TestDeprecatedFilePage(DeprecationTestCase):
+
+    """Test deprecated parts of FilePage."""
+
+    family = 'commons'
+    code = 'commons'
+
+    cached = True
+
+    def test_getFirstUploader(self):
+        """Test getFirstUploader."""
+        page = pywikibot.FilePage(self.site, 'File:Albert Einstein.jpg')
+        first = page.getFirstUploader()
+        self.assertOneDeprecation()
+        self.assertEqual(first, ['Herbizid', '2011-03-18T10:04:48Z'])
+        self.assertIsInstance(first[0], unicode)
+        self.assertIsInstance(first[1], unicode)
+
+    def test_getLatestUploader(self):
+        """Test getLatestUploader."""
+        page = pywikibot.FilePage(self.site, 'File:Albert Einstein.jpg')
+        latest = page.getLatestUploader()
+        self.assertOneDeprecation()
+        self.assertEqual(len(latest), 2)
+        self.assertIsInstance(latest[0], unicode)
+        self.assertIsInstance(latest[1], unicode)
 
 
 if __name__ == '__main__':

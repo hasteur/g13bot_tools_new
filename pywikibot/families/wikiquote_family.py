@@ -1,5 +1,6 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikiquote."""
+from __future__ import absolute_import, unicode_literals
 
 from pywikibot import family
 
@@ -7,29 +8,77 @@ __version__ = '$Id$'
 
 
 # The Wikimedia family that is known as Wikiquote
-class Family(family.WikimediaFamily):
+class Family(family.SubdomainFamily, family.WikimediaFamily):
 
     """Family class for Wikiquote."""
 
+    name = 'wikiquote'
+
+    closed_wikis = [
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Alemannic_Wikiquote
+        'als',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Old_English_Wikiquote
+        'ang',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Asturianu_Wikiquote
+        'ast',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bambara_Wikiquote
+        'bm',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Corsu_Wikiquote
+        'co',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nehiyaw_Wikiquote
+        'cr',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Gaeilge_Wikiquote
+        'ga',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kazakh_Wikiquote
+        'kk',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kanuri_Wikiquote
+        'kr',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kashmiri_Wikiquote
+        'ks',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kernewek_Wikiquote
+        'kw',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Luxembourgish_Wikiquote
+        'lb',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nauruan_Wikiquote
+        'na',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Low_Saxon_Wikiquote
+        'nds',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Quechua_Wikiquote
+        'qu',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Simple_English_Wikiquote_(3)
+        'simple',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Turkmen_Wikiquote
+        'tk',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tatar_Wikiquote
+        'tt',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Oyghurque_Wikiquote
+        'ug',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Volapuk_Wikiquote
+        'vo',
+        # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Zhuang_Wikiquote
+        'za',
+    ]
+
+    removed_wikis = [
+        'tokipona',
+    ]
+
     def __init__(self):
         """Constructor."""
-        super(Family, self).__init__()
-        self.name = 'wikiquote'
-
         self.languages_by_size = [
-            'pl', 'en', 'it', 'ru', 'de', 'pt', 'es', 'fr', 'cs', 'sk', 'bg',
-            'bs', 'tr', 'uk', 'he', 'sl', 'fa', 'lt', 'eo', 'el', 'ca', 'zh',
-            'id', 'hu', 'fi', 'sv', 'li', 'nl', 'hr', 'nn', 'ja', 'no', 'az',
-            'sa', 'hy', 'ar', 'et', 'ko', 'gl', 'ml', 'cy', 'ka', 'sr', 'ro',
-            'ku', 'te', 'th', 'da', 'eu', 'ta', 'is', 'vi', 'af', 'sq', 'hi',
-            'kn', 'la', 'be', 'br', 'mr', 'ur', 'uz', 'zh-min-nan', 'gu', 'su',
-            'wo', 'ky', 'am',
+            'en', 'it', 'pl', 'ru', 'de', 'cs', 'pt', 'es', 'fr', 'sk', 'fa',
+            'bs', 'uk', 'tr', 'lt', 'bg', 'he', 'ca', 'sl', 'eo', 'el', 'nn',
+            'id', 'zh', 'hr', 'hy', 'th', 'hu', 'li', 'nl', 'su', 'ko', 'ja',
+            'sv', 'ur', 'te', 'ar', 'fi', 'cy', 'az', 'la', 'no', 'gl', 'ml',
+            'et', 'ku', 'kn', 'sr', 'eu', 'ro', 'ta', 'ka', 'da', 'sa', 'is',
+            'gu', 'vi', 'be', 'hi', 'sq', 'mr', 'br', 'uz', 'af', 'zh-min-nan',
+            'am', 'wo', 'ky',
         ]
 
-        self.langs = dict([(lang, '%s.wikiquote.org' % lang)
-                           for lang in self.languages_by_size])
+        super(Family, self).__init__()
 
-        # Global bot allowed languages on https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
+        # Global bot allowed languages on
+        # https://meta.wikimedia.org/wiki/Bot_policy/Implementation#Current_implementation
         self.cross_allowed = [
             'af', 'am', 'ar', 'az', 'be', 'bg', 'br', 'bs', 'ca', 'cs', 'da',
             'el', 'eo', 'es', 'et', 'eu', 'fa', 'fi', 'fr', 'gl', 'he', 'hi',
@@ -39,52 +88,12 @@ class Family(family.WikimediaFamily):
             'wo', 'zh',
         ]
 
-        # Which languages have a special order for putting interlanguage links,
-        # and what order is it? If a language is not in interwiki_putfirst,
-        # alphabetical order on language code is used. For languages that are in
-        # interwiki_putfirst, interwiki_putfirst is checked first, and
-        # languages are put in the order given there. All other languages are
-        # put after those, in code-alphabetical order.
-        self.interwiki_putfirst = {
-            'en': self.alphabetic,
-            'fi': self.alphabetic,
-            'fr': self.alphabetic,
-            'he': ['en'],
-            'hu': ['en'],
-            'pl': self.alphabetic,
-            'simple': self.alphabetic,
-            'pt': self.alphabetic,
-        }
-
-        self.obsolete = {
-            'als': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Alemannic_Wikiquote
-            'ang': None,  # https://bugzilla.wikimedia.org/show_bug.cgi?id=29150
-            'ast': None,  # https://bugzilla.wikimedia.org/show_bug.cgi?id=28964
-            'bm': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Bambara_Wikiquote
-            'co': None,
-            'cr': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nehiyaw_Wikiquote
-            'dk': 'da',
-            'ga': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Gaeilge_Wikiquote
-            'jp': 'ja',
-            'kk': None,   # https://bugzilla.wikimedia.org/show_bug.cgi?id=20325
-            'kr': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kanuri_Wikiquote
-            'ks': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kashmiri_Wikiquote
-            'kw': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Kernewek_Wikiquote
-            'lb': None,
-            'minnan': 'zh-min-nan',
-            'na': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Nauruan_Wikiquote
-            'nb': 'no',
-            'nds': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Low_Saxon_Wikiquote
-            'qu': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Quechua_Wikiquote
-            'simple': None,  # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Simple_English_(3)_Wikiquote
-            'tk': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Turkmen_Wikiquote
-            'tokipona': None,
-            'tt': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Tatar_Wikiquote
-            'ug': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Oyghurque_Wikiquote
-            'vo': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Volapuk_Wikiquote
-            'za': None,   # https://meta.wikimedia.org/wiki/Proposals_for_closing_projects/Closure_of_Zhuang_Wikiquote
-            'zh-tw': 'zh',
-            'zh-cn': 'zh'
+        # Subpages for documentation.
+        # TODO: List is incomplete, to be completed for missing languages.
+        self.doc_subpages = {
+            '_default': ((u'/doc', ),
+                         ['en']
+                         ),
         }
 
     def code2encodings(self, code):
@@ -99,7 +108,3 @@ class Family(family.WikimediaFamily):
         if code == 'ru':
             return 'utf-8', 'iso8859-5'
         return self.code2encoding(code),
-
-    def shared_data_repository(self, code, transcluded=False):
-        """Return the shared data repository for this family."""
-        return ('wikidata', 'wikidata')

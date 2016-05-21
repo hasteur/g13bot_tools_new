@@ -1,17 +1,58 @@
 # -*- coding: utf-8  -*-
 """Test Link functionality."""
 #
-# (C) Pywikipedia bot team, 2014
+# (C) Pywikibot team, 2014-2015
 #
 # Distributed under the terms of the MIT license.
 #
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
 import pywikibot
+
 from pywikibot import config2 as config
-from pywikibot.page import Link
+from pywikibot.page import Link, Page
 from pywikibot.exceptions import Error, InvalidTitle
-from tests.aspects import unittest, DefaultDrySiteTestCase, TestCase
+from pywikibot.tools import PYTHON_VERSION
+
+from tests.aspects import (
+    unittest,
+    AlteredDefaultSiteTestCase as LinkTestCase,
+    DefaultDrySiteTestCase,
+    WikimediaDefaultSiteTestCase,
+    TestCase,
+)
+
+
+class TestCreateSeparated(DefaultDrySiteTestCase):
+
+    """Test C{Link.create_separated}."""
+
+    def _test_link(self, link, page, section, label):
+        """Test the separate contents of the link."""
+        self.assertIs(link.site, self.site)
+        self.assertEqual(link.title, page)
+        if section is None:
+            self.assertIsNone(link.section)
+        else:
+            self.assertEqual(link.section, section)
+        if label is None:
+            self.assertIsNone(link.anchor)
+        else:
+            self.assertEqual(link.anchor, label)
+
+    def test(self):
+        """Test combinations of parameters."""
+        self._test_link(Link.create_separated('Foo', self.site),
+                        'Foo', None, None)
+        self._test_link(Link.create_separated('Foo', self.site, section='Bar'),
+                        'Foo', 'Bar', None)
+        self._test_link(Link.create_separated('Foo', self.site, label='Baz'),
+                        'Foo', None, 'Baz')
+        self._test_link(Link.create_separated('Foo', self.site, section='Bar',
+                                              label='Baz'),
+                        'Foo', 'Bar', 'Baz')
 
 
 # ---- Tests checking if the parser does (not) accept (in)valid titles
@@ -28,6 +69,7 @@ class TestLink(DefaultDrySiteTestCase):
     """
 
     def test_valid(self):
+        """Test that valid titles are correctly normalized."""
         self.assertEqual(Link('Sandbox', self.get_site()).title, 'Sandbox')
         self.assertEqual(Link('A "B"', self.get_site()).title, 'A "B"')
         self.assertEqual(Link('A \'B\'', self.get_site()).title, 'A \'B\'')
@@ -60,6 +102,7 @@ class TestLink(DefaultDrySiteTestCase):
         self.assertEqual(l.section, 'B')
 
     def test_invalid(self):
+        """Test that invalid titles raise InvalidTitle exception."""
         self.assertRaises(InvalidTitle, Link('', self.get_site()).parse)
         self.assertRaises(InvalidTitle, Link(':', self.get_site()).parse)
         self.assertRaises(InvalidTitle, Link('__  __', self.get_site()).parse)
@@ -98,25 +141,61 @@ class TestLink(DefaultDrySiteTestCase):
         self.assertRaises(InvalidTitle, Link('Category: ', self.get_site()).parse)
         self.assertRaises(InvalidTitle, Link('Category: #bar', self.get_site()).parse)
 
+    def test_relative(self):
+        """Test that relative links are handled properly."""
+        # Subpage
+        p = Page(self.get_site(), 'Foo')
+        l = Link('/bar', p)
+        self.assertEqual(l.title, 'Foo/bar')
+        self.assertEqual(l.site, self.get_site())
+        # Subpage of Page with section
+        p = Page(self.get_site(), 'Foo#Baz')
+        l = Link('/bar', p)
+        self.assertEqual(l.title, 'Foo/bar')
+        self.assertEqual(l.site, self.get_site())
+        # Non-subpage link text beginning with slash
+        l = Link('/bar', self.get_site())
+        self.assertEqual(l.title, '/bar')
+
+
+class Issue10254TestCase(DefaultDrySiteTestCase):
+
+    """Test T102461 (Python issue 10254)."""
+
+    def setUp(self):
+        """Set up test case."""
+        super(Issue10254TestCase, self).setUp()
+        self._orig_unicodedata = pywikibot.page.unicodedata
+
+    def tearDown(self):
+        """Tear down test case."""
+        pywikibot.page.unicodedata = self._orig_unicodedata
+        super(Issue10254TestCase, self).tearDown()
+
+    def test_no_change(self):
+        """Test T102461 (Python issue 10254) is not encountered."""
+        title = 'Li̍t-sṳ́'
+        l = Link(title, self.site)
+        self.assertEqual(l.title, 'Li̍t-sṳ́')
+
+    @unittest.skipIf(PYTHON_VERSION != (2, 6, 6), 'Python 2.6.6-only test')
+    def test_py266_bug_exception(self):
+        """Test Python issue 10254 causes an exception."""
+        pywikibot.page.unicodedata = __import__('unicodedata')
+        title = 'Li̍t-sṳ́'
+        self.assertRaises(UnicodeError, Link, title, self.site)
+
 
 # ---- The first set of tests are explicit links, starting with a ':'.
 
 
-class TestPartiallyQualifiedExplicitLinkSameSiteParser(TestCase):
+class TestPartiallyQualifiedExplicitLinkSameSiteParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_code(self):
         """Test ':wikipedia:Main Page' on enwp is namespace 4."""
@@ -159,21 +238,13 @@ class TestPartiallyQualifiedExplicitLinkSameSiteParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestPartiallyQualifiedExplicitLinkDifferentCodeParser(TestCase):
+class TestPartiallyQualifiedExplicitLinkDifferentCodeParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_family(self):
         """Test ':en:Main Page' on dewp is namespace 0."""
@@ -196,21 +267,13 @@ class TestPartiallyQualifiedExplicitLinkDifferentCodeParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestPartiallyQualifiedExplicitLinkDifferentFamilyParser(TestCase):
+class TestPartiallyQualifiedExplicitLinkDifferentFamilyParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_code(self):
         """Test ':wikipedia:Main Page' on enws is namespace 0."""
@@ -233,7 +296,7 @@ class TestPartiallyQualifiedExplicitLinkDifferentFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedSameNamespaceFamilyParser(TestCase):
+class TestFullyQualifiedSameNamespaceFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -257,7 +320,7 @@ class TestFullyQualifiedSameNamespaceFamilyParser(TestCase):
         self.assertEqual(link.namespace, 4)
 
 
-class TestFullyQualifiedExplicitLinkSameFamilyParser(TestCase):
+class TestFullyQualifiedExplicitLinkSameFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -286,7 +349,7 @@ class TestFullyQualifiedExplicitLinkSameFamilyParser(TestCase):
         self.assertEqual(link.namespace, 4)
 
 
-class TestFullyQualifiedExplicitLinkDifferentFamilyParser(TestCase):
+class TestFullyQualifiedExplicitLinkDifferentFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -343,7 +406,7 @@ class TestFullyQualifiedExplicitLinkDifferentFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedExplicitLinkNoLangConfigFamilyParser(TestCase):
+class TestFullyQualifiedExplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -400,7 +463,7 @@ class TestFullyQualifiedExplicitLinkNoLangConfigFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedNoLangFamilyExplicitLinkParser(TestCase):
+class TestFullyQualifiedNoLangFamilyExplicitLinkParser(LinkTestCase):
 
     """Link tests."""
 
@@ -414,7 +477,7 @@ class TestFullyQualifiedNoLangFamilyExplicitLinkParser(TestCase):
             'code': 'en'
         },
         'test.wp': {
-            'family': 'wikipedia',
+            'family': 'test',
             'code': 'test'
         },
     }
@@ -461,7 +524,7 @@ class TestFullyQualifiedNoLangFamilyExplicitLinkParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedOneSiteFamilyExplicitLinkParser(TestCase):
+class TestFullyQualifiedOneSiteFamilyExplicitLinkParser(LinkTestCase):
 
     """Link tests."""
 
@@ -493,21 +556,13 @@ class TestFullyQualifiedOneSiteFamilyExplicitLinkParser(TestCase):
 # ---- Tests of a Link without colons, which shouldnt be interwikis, follow.
 
 
-class TestPartiallyQualifiedImplicitLinkSameSiteParser(TestCase):
+class TestPartiallyQualifiedImplicitLinkSameSiteParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_code(self):
         """Test 'wikipedia:Main Page' on enwp is namespace 4."""
@@ -550,21 +605,13 @@ class TestPartiallyQualifiedImplicitLinkSameSiteParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestPartiallyQualifiedImplicitLinkDifferentCodeParser(TestCase):
+class TestPartiallyQualifiedImplicitLinkDifferentCodeParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_family(self):
         """Test 'en:Main Page' on dewp  is namespace 0."""
@@ -587,21 +634,13 @@ class TestPartiallyQualifiedImplicitLinkDifferentCodeParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestPartiallyQualifiedImplicitLinkDifferentFamilyParser(TestCase):
+class TestPartiallyQualifiedImplicitLinkDifferentFamilyParser(LinkTestCase):
 
     """Link tests."""
 
     family = 'wikipedia'
     code = 'en'
     cached = True
-
-    def setUp(self):
-        self.old_lang = config.mylang
-        self.old_family = config.family
-
-    def tearDown(self):
-        config.mylang = self.old_lang
-        config.family = self.old_family
 
     def test_partially_qualified_NS0_code(self):
         """Test 'wikipedia:Main Page' on enws is namespace 0."""
@@ -624,7 +663,7 @@ class TestPartiallyQualifiedImplicitLinkDifferentFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedImplicitLinkSameFamilyParser(TestCase):
+class TestFullyQualifiedImplicitLinkSameFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -653,7 +692,7 @@ class TestFullyQualifiedImplicitLinkSameFamilyParser(TestCase):
         self.assertEqual(link.namespace, 4)
 
 
-class TestFullyQualifiedImplicitLinkDifferentFamilyParser(TestCase):
+class TestFullyQualifiedImplicitLinkDifferentFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -710,7 +749,7 @@ class TestFullyQualifiedImplicitLinkDifferentFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(TestCase):
+class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
     """Link tests."""
 
@@ -767,7 +806,7 @@ class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(TestCase):
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedNoLangFamilyImplicitLinkParser(TestCase):
+class TestFullyQualifiedNoLangFamilyImplicitLinkParser(LinkTestCase):
 
     """Link tests."""
 
@@ -801,7 +840,7 @@ class TestFullyQualifiedNoLangFamilyImplicitLinkParser(TestCase):
         config.family = 'wikipedia'
         link = Link('wikidata:testwiki:Q6')
         link.parse()
-        self.assertEqual(link.site, pywikibot.Site('test', 'wikipedia'))
+        self.assertEqual(link.site, pywikibot.Site('test', 'test'))
         self.assertEqual(link.title, 'Q6')
         self.assertEqual(link.namespace, 0)
 
@@ -811,12 +850,12 @@ class TestFullyQualifiedNoLangFamilyImplicitLinkParser(TestCase):
         config.family = 'wikipedia'
         link = Link('wikidata:testwiki:Talk:Q6')
         link.parse()
-        self.assertEqual(link.site, pywikibot.Site('test', 'wikipedia'))
+        self.assertEqual(link.site, pywikibot.Site('test', 'test'))
         self.assertEqual(link.title, 'Q6')
         self.assertEqual(link.namespace, 1)
 
 
-class TestFullyQualifiedOneSiteFamilyImplicitLinkParser(TestCase):
+class TestFullyQualifiedOneSiteFamilyImplicitLinkParser(LinkTestCase):
 
     """Link tests."""
 
@@ -907,7 +946,7 @@ class TestEmptyTitle(TestCase):
         self.assertEqual(link.namespace, 0)
 
 
-class TestInvalidInterwikiLinks(TestCase):
+class TestInvalidInterwikiLinks(WikimediaDefaultSiteTestCase):
 
     """Test links to non-wikis."""
 
@@ -916,20 +955,20 @@ class TestInvalidInterwikiLinks(TestCase):
 
     def test_non_wiki_prefix(self):
         """Test that Link fails if the interwiki prefix is not a wiki."""
-        link = Link('bugzilla:1337')
+        link = Link('bugzilla:1337', source=self.site)
         self.assertRaisesRegex(
             Error,
             'bugzilla:1337 is not a local page on wikipedia:en, and the '
-            'interwiki prefix bugzilla is not supported by PyWikiBot!',
+            'interwiki prefix bugzilla is not supported by Pywikibot!',
             link.parse)
 
     def test_other_wiki_prefix(self):
         """Test that Link fails if the interwiki prefix is a unknown family."""
-        link = Link('bulba:this-will-never-work')
+        link = Link('bulba:this-will-never-work', source=self.site)
         self.assertRaisesRegex(
             Error,
             'bulba:this-will-never-work is not a local page on wikipedia:en, '
-            'and the interwiki prefix bulba is not supported by PyWikiBot!',
+            'and the interwiki prefix bulba is not supported by Pywikibot!',
             link.parse)
 
 

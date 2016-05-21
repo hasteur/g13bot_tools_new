@@ -1,7 +1,10 @@
 # -*- coding: utf-8  -*-
 """Family module for Wikidata."""
+from __future__ import absolute_import, unicode_literals
+
 __version__ = '$Id$'
 
+from pywikibot import config
 from pywikibot import family
 
 # The Wikidata family
@@ -11,10 +14,12 @@ class Family(family.WikimediaFamily):
 
     """Family class for Wikidata."""
 
+    name = 'wikidata'
+    test_codes = ('test', )
+
     def __init__(self):
         """Constructor."""
         super(Family, self).__init__()
-        self.name = 'wikidata'
         self.langs = {
             'wikidata': 'www.wikidata.org',
             'test': 'test.wikidata.org',
@@ -27,18 +32,14 @@ class Family(family.WikimediaFamily):
             '_default': ((u'/doc', ), ['wikidata']),
         }
 
-    def shared_data_repository(self, code, transcluded=False):
-        """
-        Indicate Wikidata is both a repository and its own client.
+        # Disable cosmetic changes
+        config.cosmetic_changes_disable.update({
+            'wikidata': ('wikidata', 'test')
+        })
 
-        Until 20 August 2014, Wikidata was only a data repository,
-        and this method only returned a tuple with data if
-        transcluded was False.
-
-        On that date, the software was enhanced so that Wikidata
-        could store sitelinks to itself.
-        """
-        return (code, self.name)
+    def interface(self, code):
+        """Return 'DataSite'."""
+        return 'DataSite'
 
     def calendarmodel(self, code):
         """Default calendar model for WbTime datatype."""
@@ -54,12 +55,15 @@ class Family(family.WikimediaFamily):
             'dione': 'http://www.wikidata.org/entity/Q15040',
             'earth': 'http://www.wikidata.org/entity/Q2',
             'enceladus': 'http://www.wikidata.org/entity/Q3303',
+            'eros': 'http://www.wikidata.org/entity/Q16711',
             'europa': 'http://www.wikidata.org/entity/Q3143',
             'ganymede': 'http://www.wikidata.org/entity/Q3169',
+            'gaspra': 'http://www.wikidata.org/entity/Q158244',
             'hyperion': 'http://www.wikidata.org/entity/Q15037',
             'iapetus': 'http://www.wikidata.org/entity/Q17958',
             'io': 'http://www.wikidata.org/entity/Q3123',
             'jupiter': 'http://www.wikidata.org/entity/Q319',
+            'lutetia': 'http://www.wikidata.org/entity/Q107556',
             'mars': 'http://www.wikidata.org/entity/Q111',
             'mercury': 'http://www.wikidata.org/entity/Q308',
             'mimas': 'http://www.wikidata.org/entity/Q15034',
@@ -69,7 +73,7 @@ class Family(family.WikimediaFamily):
             'phobos': 'http://www.wikidata.org/entity/Q7547',
             'phoebe': 'http://www.wikidata.org/entity/Q17975',
             'pluto': 'http://www.wikidata.org/entity/Q339',
-            'rhea': 'http://www.wikidata.org/entity/Q108419',
+            'rhea': 'http://www.wikidata.org/entity/Q15050',
             'tethys': 'http://www.wikidata.org/entity/Q15047',
             'titan': 'http://www.wikidata.org/entity/Q2565',
             'titania': 'http://www.wikidata.org/entity/Q3322',
