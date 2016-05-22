@@ -23,6 +23,9 @@ __version__ = '$Id$'
 
 import os, re, pickle, bz2, time, datetime, logging
 import sys
+import pywikibot
+
+from pywikibot import i18n, Bot
 #DB CONFIG
 from db_handle import *
 
