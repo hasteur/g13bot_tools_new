@@ -95,7 +95,7 @@ def nudge_drive(category_name):
               continue
             #Perform a null edit to get the creative Category juices flowing
             logger.info('Starting to process %s' % article.title())
-            article.put(newtext = article.get(), comment="Null Edit")
+            article.put(newtext = article.get(), comment="Null Edit", force=True)
             logger.debug('Null Edit complete')
             user_talk_page_title = "User talk:%s" % creator
             user_talk_page = pywikibot.Page(
