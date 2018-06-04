@@ -217,7 +217,7 @@ def do_nominations(passnum = 0):
     notification_date = thirty_days_ago.strftime('%Y-%m-%d %H:%M:%S')
     logger.debug("Notification Date: %s" % notification_date)
     cur = conn.cursor()
-    sql_string = """SELECT article, editor,notified
+    sql_string = """SELECT article, editor
        from g13_records
        where notified <= '%s'
          and nominated = '0000-00-00 00:00:00'
@@ -289,19 +289,6 @@ def do_nominations(passnum = 0):
             change_counter = change_counter + 1
             print "Updated: %s" % article.title()
             logger.info("Submission %s has been updated" % article_item[0])
-            continue
-        if edit_time > notify_tuple:
-            #Page has been updated since the nudge, Not valid any more
-            curs = conn.cursor()
-            sql_string = "DELETE from g13_records" + \
-                " WHERE article = %s " + \
-                " and editor = %s;"  
-            curs.execute(sql_string,article_item)
-            conn.commit()
-            curs = None
-            change_counter = change_counter + 1
-            print "Updated: %s for edit since notify" % article.title()
-            logger.info("Submission %s has been updated since notify" % article_item[0])
             continue
         elif created_ts > bot_recheck_date:
             #Page has been re-created since t 6 month mark, disqualify
