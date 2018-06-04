@@ -195,14 +195,15 @@ def do_nominations(passnum = 0):
     change_counter = 0
     nom_cat = pywikibot.Category(
         pywikibot.getSite(),
-        'Category:Candidates for speedy deletion as abandoned AfC submissions' 
+        'Category:Candidates for speedy deletion as abandoned drafts or AfC submissions' 
     )
     already_nominated_list = set(nom_cat.articles())
     csd_cat_size = len(already_nominated_list)
     max_noms_csd_cat = 50 - csd_cat_size
-    if max_noms_csd_cat == 0:
+    print max_noms_csd_cat
+    if max_noms_csd_cat <= 0:
         return
-    if passnum == 11:
+    if passnum == 10:
         return
     logger.debug("Max Nominations from cat: %i" % max_noms_csd_cat)
     thirty_days_ago = ( 
@@ -216,7 +217,7 @@ def do_nominations(passnum = 0):
     notification_date = thirty_days_ago.strftime('%Y-%m-%d %H:%M:%S')
     logger.debug("Notification Date: %s" % notification_date)
     cur = conn.cursor()
-    sql_string = """SELECT article, editor
+    sql_string = """SELECT article, editor,notified
        from g13_records
        where notified <= '%s'
          and nominated = '0000-00-00 00:00:00'
@@ -236,6 +237,8 @@ def do_nominations(passnum = 0):
         except:
             logger.critical("Problem with %s" % article_item[0])
             continue
+        notify_tuple = datetime.datetime.timetuple(article_item[2])
+        article_item = article_item[0:2]
         if False == article.exists():
             #Submission doesn't exisist any more, Remove it from the DB
             curs = conn.cursor()
@@ -287,6 +290,19 @@ def do_nominations(passnum = 0):
             print "Updated: %s" % article.title()
             logger.info("Submission %s has been updated" % article_item[0])
             continue
+        if edit_time > notify_tuple:
+            #Page has been updated since the nudge, Not valid any more
+            curs = conn.cursor()
+            sql_string = "DELETE from g13_records" + \
+                " WHERE article = %s " + \
+                " and editor = %s;"  
+            curs.execute(sql_string,article_item)
+            conn.commit()
+            curs = None
+            change_counter = change_counter + 1
+            print "Updated: %s for edit since notify" % article.title()
+            logger.info("Submission %s has been updated since notify" % article_item[0])
+            continue
         elif created_ts > bot_recheck_date:
             #Page has been re-created since t 6 month mark, disqualify
             curs = conn.cursor()
@@ -327,7 +343,7 @@ def do_nominations(passnum = 0):
         curs = None
         logger.debug('Updated nominated timestamp')
         user_talk_page = pywikibot.Page(
-          self.site,
+          pywikibot.getSite(),
           'User talk:%s' % creator
         )
         up_summary = '[[User:HasteurBot]]: Notification of '+\

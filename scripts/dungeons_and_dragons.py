@@ -11,7 +11,6 @@ __version__ = '$Id$'
 
 import pywikibot
 from pywikibot.pagegenerators import GeneratorFactory, parameterHelp
-import pdb
 
 docuReplacements = {'&params;': parameterHelp}
 
@@ -125,14 +124,13 @@ def main(*args):
                 if page.isRedirectPage():
                     target_redirect = page.getRedirectTarget().title()
                 dest_text = page_text % target_redirect
-                pdb.set_trace()
                 dest_page.text = dest_text
-                #dest_page.save(
-                #    comment=u'Hasteurbot task N: Dungeons and Dragons',
-                #    watch = False,
-                #    botflag = True,
-                #    force = True
-                #)
+                dest_page.save(
+                    comment=u'Hasteurbot task 13: Dungeons and Dragons',
+                    watch = False,
+                    botflag = True,
+                    force = True
+                )
                     
 
 

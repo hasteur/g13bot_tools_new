@@ -29,18 +29,6 @@ from pywikibot import i18n, Bot
 #DB CONFIG
 from db_handle import *
 
-logger = logging.getLogger('g13_maintenance_bot')
-logger.setLevel(logging.DEBUG)
-trfh = logging.handlers.TimedRotatingFileHandler('logs/g13_db_maintenance', \
-    when='D', \
-    interval = 14, \
-    backupCount = 90, \
-)
-trfh.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-trfh.setFormatter(formatter)
-logger.addHandler(trfh)
-trfh.doRollover()
 
 
 def g13_db_maintenance():
@@ -48,18 +36,25 @@ def g13_db_maintenance():
     Go through the local DB and clean up any records that are no longer 
     appropriate
   """
-  global logger
+  logger = logging.getLogger('g13_maintenance_bot')
+  logger.setLevel(logging.DEBUG)
+  trfh = logging.handlers.TimedRotatingFileHandler('logs/g13_db_maintenance', \
+      when='D', \
+      interval = 14, \
+      backupCount = 90, \
+  )
+  trfh.setLevel(logging.DEBUG)
+  formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+  trfh.setFormatter(formatter)
+  logger.addHandler(trfh)
+  trfh.doRollover()
   logger.debug('Opened DB conn')
   cur = conn.cursor()
-  moder = int(sys.argv[1])
   cur.execute( \
     "SELECT article, editor" + \
     " from g13_records " + \
     " where " + \
-    "  nominated > '0000-00-00 00:00:00' and" + \
-    "  MOD(id,5) = %s" + \
-    " ORDER BY id " +\
-    "", (moder)
+    "  nominated > '0000-00-00 00:00:00'"
   )
   results = cur.fetchall()
   cur = None
